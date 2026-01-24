@@ -21,6 +21,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 
 // Form schemas
 const step1Schema = z.object({
@@ -276,10 +277,13 @@ export default function RequestPage() {
                   <MapPin className="w-4 h-4 inline mr-2" />
                   Full Address
                 </label>
-                <input
-                  {...step1Form.register("address")}
-                  className={`input ${step1Form.formState.errors.address ? "input-error" : ""}`}
+                <AddressAutocomplete
+                  register={step1Form.register}
+                  setValue={step1Form.setValue}
+                  error={step1Form.formState.errors.address}
+                  className="input"
                   placeholder="123 Main St, San Francisco, CA 94102"
+                  apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ""}
                 />
                 {step1Form.formState.errors.address && (
                   <p className="mt-1 text-sm text-danger-500">
