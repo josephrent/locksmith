@@ -10,12 +10,14 @@ import {
   MessageSquare,
   BarChart3,
   Settings,
+  Clock,
 } from "lucide-react";
 import clsx from "clsx";
 
 const navigation = [
   { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
   { name: "Jobs", href: "/admin/jobs", icon: Briefcase },
+  { name: "Sessions", href: "/admin/sessions", icon: Clock },
   { name: "Locksmiths", href: "/admin/locksmiths", icon: Users },
   { name: "Messages", href: "/admin/messages", icon: MessageSquare },
   { name: "Analytics", href: "/admin/analytics", icon: BarChart3 },
