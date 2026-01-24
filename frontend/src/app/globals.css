@@ -108,3 +108,9 @@
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-brand-600;
 }
+
+gmp-place-autocomplete {
+  display: block;
+  width: 100%;
+  background: transparent;
+}

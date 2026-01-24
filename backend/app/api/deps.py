@@ -13,6 +13,7 @@ from app.services.dispatch_service import DispatchService
 from app.services.sms_service import SMSService
 from app.services.payment_service import PaymentService
 from app.services.audit_service import AuditService
+from app.services.s3_service import S3Service
 
 settings = get_settings()
 
@@ -85,6 +86,11 @@ def get_dispatch_service(
     return DispatchService(db, redis_client, sms_service, audit_service)
 
 
+def get_s3_service() -> S3Service:
+    """Get S3 service."""
+    return S3Service()
+
+
 # Annotated service dependencies
 AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
 LocksmithServiceDep = Annotated[LocksmithService, Depends(get_locksmith_service)]
@@ -92,3 +98,4 @@ JobServiceDep = Annotated[JobService, Depends(get_job_service)]
 SMSServiceDep = Annotated[SMSService, Depends(get_sms_service)]
 PaymentServiceDep = Annotated[PaymentService, Depends(get_payment_service)]
 DispatchServiceDep = Annotated[DispatchService, Depends(get_dispatch_service)]
+S3ServiceDep = Annotated[S3Service, Depends(get_s3_service)]

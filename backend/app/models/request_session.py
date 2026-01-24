@@ -65,6 +65,11 @@ class RequestSession(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     deposit_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)  # in cents
     
+    # Car details (for car_lockout service)
+    car_make: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    car_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    car_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    
     # Payment (step 3)
     stripe_payment_intent_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     
@@ -91,6 +96,7 @@ class RequestSession(Base):
 
     # Relationships
     job = relationship("Job", back_populates="request_session", uselist=False)
+    photos = relationship("Photo", back_populates="request_session", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<RequestSession {self.id} - Step {self.step_reached} ({self.status})>"

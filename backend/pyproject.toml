@@ -26,6 +26,7 @@ dependencies = [
     "stripe==8.2.0",
     "googlemaps==4.10.0",
     "httpx==0.26.0",
+    "boto3==1.34.34",
     # Utilities
     "python-dotenv==1.0.1",
     "python-dateutil==2.8.2",
@@ -35,6 +36,3 @@ dependencies = [
     "pytest-cov==4.1.0",
 ]
 
-[tool.uv.scripts]
-dev = "uvicorn app.main:app --reload --port 8000"
-start = "uvicorn app.main:app --host 0.0.0.0 --port 8000"

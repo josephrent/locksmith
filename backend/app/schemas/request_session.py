@@ -3,7 +3,7 @@
 from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 import re
 
 from app.models.request_session import SessionStatus
@@ -55,6 +55,23 @@ class ServiceSelection(BaseModel):
     service_type: str = Field(..., pattern="^(home_lockout|car_lockout|rekey|smart_lock)$")
     urgency: str = Field("standard", pattern="^(emergency|standard)$")
     description: str | None = Field(None, max_length=1000)
+    
+    # Car details (required for car_lockout)
+    car_make: str | None = Field(None, max_length=100)
+    car_model: str | None = Field(None, max_length=100)
+    car_year: int | None = Field(None, ge=1900, le=2100)
+    
+    @model_validator(mode="after")
+    def validate_car_fields(self) -> "ServiceSelection":
+        """Require car fields if service_type is car_lockout."""
+        if self.service_type == "car_lockout":
+            if not self.car_make or not self.car_make.strip():
+                raise ValueError("Car make is required for car lockout service")
+            if not self.car_model or not self.car_model.strip():
+                raise ValueError("Car model is required for car lockout service")
+            if self.car_year is None:
+                raise ValueError("Car year is required for car lockout service")
+        return self
 
 
 class ServiceSelectionResponse(BaseModel):
@@ -111,6 +128,11 @@ class RequestSessionResponse(BaseModel):
     urgency: str | None = None
     description: str | None = None
     deposit_amount: int | None = None
+    
+    # Car details (for car_lockout)
+    car_make: str | None = None
+    car_model: str | None = None
+    car_year: int | None = None
     
     # Tracking
     user_agent: str | None = None

@@ -23,6 +23,9 @@ class JobService:
         self,
         session: RequestSession,
         stripe_payment_intent_id: str,
+        car_make: str | None = None,
+        car_model: str | None = None,
+        car_year: int | None = None,
     ) -> Job:
         """Create a job from a completed request session."""
         job = Job(
@@ -38,6 +41,9 @@ class JobService:
             stripe_payment_status="succeeded",
             request_session_id=session.id,
             status=JobStatus.CREATED,
+            car_make=car_make,
+            car_model=car_model,
+            car_year=car_year,
         )
         
         self.db.add(job)

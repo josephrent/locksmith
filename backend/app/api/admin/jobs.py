@@ -2,14 +2,21 @@
 
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import DbSession
 
 from app.api.deps import (
     JobServiceDep,
     DispatchServiceDep,
     PaymentServiceDep,
     AuditServiceDep,
+    S3ServiceDep,
 )
+from app.models.job import Job
 from app.models.job import JobStatus
+from app.models.photo import Photo
 from app.schemas.job import (
     JobResponse,
     JobListResponse,
@@ -258,3 +265,114 @@ async def control_dispatch(
     )
 
     return {"success": True, "action": data.action}
+
+
+@router.get("/{job_id}/photos")
+async def get_job_photos(
+    job_id: UUID,
+    db: DbSession,
+    job_service: JobServiceDep,
+    s3_service: S3ServiceDep,
+):
+    """
+    Get all photos for a job with presigned URLs.
+    
+    Returns presigned URLs valid for 5 minutes for viewing photos.
+    """
+    # Verify job exists
+    job = await job_service.get_by_id(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Get all photos for this job
+    result = await db.execute(
+        select(Photo).where(Photo.job_id == job_id).order_by(Photo.created_at.desc())
+    )
+    photos = result.scalars().all()
+
+    # Generate presigned URLs
+    photo_urls = []
+    for photo in photos:
+        if photo.s3_bucket and s3_service.is_configured():
+            try:
+                s3_key = photo.get_s3_key()
+                if not s3_key:
+                    continue
+                url = s3_service.get_presigned_url(s3_key, expiration=300)
+                photo_urls.append({
+                    "photo_id": str(photo.id),
+                    "url": url,
+                    "content_type": photo.content_type,
+                    "bytes": photo.bytes,
+                    "source": photo.source,
+                    "created_at": photo.created_at.isoformat(),
+                })
+            except ValueError as e:
+                # Log error but continue
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to generate presigned URL for photo {photo.id}: {str(e)}")
+        else:
+            # Photo not in S3 or S3 not configured
+            photo_urls.append({
+                "photo_id": str(photo.id),
+                "url": None,
+                "error": "Photo not available in storage",
+                "content_type": photo.content_type,
+                "bytes": photo.bytes,
+                "source": photo.source,
+                "created_at": photo.created_at.isoformat(),
+            })
+
+    return {"photos": photo_urls}
+
+
+@router.get("/{job_id}/photo/{photo_id}/url")
+async def get_photo_url(
+    job_id: UUID,
+    photo_id: UUID,
+    db: DbSession,
+    job_service: JobServiceDep,
+    s3_service: S3ServiceDep,
+    expiration: int = Query(300, ge=60, le=3600),  # 5 min to 1 hour
+):
+    """
+    Get a presigned URL for a specific photo.
+    
+    Returns a presigned URL valid for the specified expiration time (default 5 minutes).
+    """
+    # Verify job exists
+    job = await job_service.get_by_id(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Get photo
+    result = await db.execute(
+        select(Photo).where(
+            Photo.id == photo_id,
+            Photo.job_id == job_id,
+        )
+    )
+    photo = result.scalar_one_or_none()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    if not photo.s3_bucket:
+        raise HTTPException(status_code=404, detail="Photo not available in storage")
+
+    if not s3_service.is_configured():
+        raise HTTPException(status_code=500, detail="Photo storage not configured")
+
+    try:
+        s3_key = photo.get_s3_key()
+        if not s3_key:
+            raise HTTPException(status_code=404, detail="Could not reconstruct S3 path")
+        url = s3_service.get_presigned_url(s3_key, expiration=expiration)
+        return {
+            "photo_id": str(photo.id),
+            "url": url,
+            "expires_in": expiration,
+            "content_type": photo.content_type,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate URL: {str(e)}")

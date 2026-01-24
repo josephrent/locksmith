@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     # Google Maps
     google_maps_api_key: str = ""
 
+    # AWS S3 (for photo storage)
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_region: str = "us-east-1"
+    s3_bucket_name: str = ""
+    s3_photo_prefix: str = "photos/"  # Folder prefix in bucket
+
     # App Settings
     app_env: str = "development"
     base_url: str = "http://localhost:8000"

@@ -1,15 +1,17 @@
 """Customer API routes - public, no authentication required."""
 
 from uuid import UUID
-from fastapi import APIRouter, HTTPException, Request, BackgroundTasks
+import uuid
+from fastapi import APIRouter, HTTPException, Request, BackgroundTasks, UploadFile, File
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 import googlemaps
 
-from app.api.deps import DbSession, PaymentServiceDep, DispatchServiceDep, SMSServiceDep
+from app.api.deps import DbSession, PaymentServiceDep, DispatchServiceDep, SMSServiceDep, S3ServiceDep
 from app.config import get_settings
 from app.models.request_session import RequestSession, SessionStatus
 from app.models.job import Job
+from app.models.photo import Photo
 from app.services.job_service import JobService
 from app.schemas.request_session import (
     RequestSessionCreate,
@@ -179,6 +181,12 @@ async def select_service(
     session.deposit_amount = deposit_amount
     session.step_reached = 2
     session.status = SessionStatus.SERVICE_SELECTED
+    
+    # Store car details if provided
+    if data.service_type == "car_lockout":
+        session.car_make = data.car_make
+        session.car_model = data.car_model
+        session.car_year = data.car_year
 
     await db.commit()
 
@@ -189,6 +197,85 @@ async def select_service(
         service_type=data.service_type,
         urgency=data.urgency,
     )
+
+
+@router.post("/{session_id}/photo")
+async def upload_photo(
+    session_id: UUID,
+    db: DbSession,
+    s3_service: S3ServiceDep,
+    photo: UploadFile = File(...),
+):
+    """
+    Upload a photo for the request session.
+    
+    Uploads to S3 and stores metadata in database.
+    """
+    # Get session
+    result = await db.execute(
+        select(RequestSession).where(RequestSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Validate file type
+    if not photo.content_type or not photo.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    # Read file content
+    file_content = await photo.read()
+    file_size = len(file_content)
+
+    # Validate file size (max 10MB)
+    max_size = 10 * 1024 * 1024  # 10MB
+    if file_size > max_size:
+        raise HTTPException(status_code=400, detail="File size must be less than 10MB")
+
+    # Generate Photo ID first (will be used as S3 filename UUID)
+    photo_id = uuid.uuid4()
+    
+    # Upload to S3 if configured
+    s3_bucket = None
+    if s3_service.is_configured():
+        try:
+            s3_bucket, _ = s3_service.upload_photo(
+                photo_id=photo_id,
+                file_content=file_content,
+                content_type=photo.content_type,
+                session_id=session_id,
+            )
+        except ValueError as e:
+            # Log error but don't fail - store metadata anyway
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"S3 upload failed: {str(e)}")
+            # In development, allow continuing without S3
+            if settings.app_env != "development":
+                raise HTTPException(status_code=500, detail="Failed to upload photo to storage")
+    else:
+        # S3 not configured - log warning
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning("S3 not configured - photo metadata saved but file not stored")
+        if settings.app_env != "development":
+            raise HTTPException(status_code=500, detail="Photo storage not configured")
+
+    # Create photo record with pre-generated ID
+    photo_record = Photo(
+        id=photo_id,  # Use the same ID as S3 filename
+        request_session_id=session_id,
+        source="web_upload",
+        content_type=photo.content_type,
+        bytes=file_size,
+        s3_bucket=s3_bucket,
+    )
+
+    db.add(photo_record)
+    await db.commit()
+    await db.refresh(photo_record)
+
+    return {"photo_id": str(photo_record.id), "message": "Photo uploaded successfully"}
 
 
 @router.post("/{session_id}/payment-intent", response_model=PaymentIntent)
@@ -297,6 +384,9 @@ async def complete_request(
     job = await job_service.create_from_session(
         session=session,
         stripe_payment_intent_id=session.stripe_payment_intent_id,
+        car_make=session.car_make,
+        car_model=session.car_model,
+        car_year=session.car_year,
     )
 
     # Send confirmation SMS to customer (don't fail if SMS fails)

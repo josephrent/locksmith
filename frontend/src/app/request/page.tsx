@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -19,6 +19,9 @@ import {
   Check,
   Loader2,
   AlertCircle,
+  Camera,
+  Upload,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
@@ -35,6 +38,32 @@ const step2Schema = z.object({
   service_type: z.enum(["home_lockout", "car_lockout", "rekey", "smart_lock"]),
   urgency: z.enum(["standard", "emergency"]),
   description: z.string().optional(),
+  // Photo required for home_lockout
+  photo: z.instanceof(File).optional(),
+  // Car details required for car_lockout
+  car_make: z.string().optional(),
+  car_model: z.string().optional(),
+  car_year: z.number().int().min(1900).max(2100).optional(),
+}).refine((data) => {
+  // Require photo for home_lockout
+  if (data.service_type === "home_lockout") {
+    return data.photo !== undefined && data.photo instanceof File;
+  }
+  return true;
+}, {
+  message: "Please upload a photo of your door lock",
+  path: ["photo"],
+}).refine((data) => {
+  // Require car details for car_lockout
+  if (data.service_type === "car_lockout") {
+    return data.car_make && data.car_make.trim().length > 0 &&
+           data.car_model && data.car_model.trim().length > 0 &&
+           data.car_year !== undefined;
+  }
+  return true;
+}, {
+  message: "Car make, model, and year are required",
+  path: ["car_make"],
 });
 
 type Step1Data = z.infer<typeof step1Schema>;
@@ -75,6 +104,7 @@ export default function RequestPage() {
   const [locationRejected, setLocationRejected] = useState(false);
   const [depositAmount, setDepositAmount] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   const step1Form = useForm<Step1Data>({
     resolver: zodResolver(step1Schema),
@@ -86,6 +116,15 @@ export default function RequestPage() {
       urgency: "standard",
     },
   });
+
+  // Reset photo preview when service type changes
+  const selectedServiceType = step2Form.watch("service_type");
+  useEffect(() => {
+    if (selectedServiceType !== "home_lockout") {
+      setPhotoPreview(null);
+      step2Form.setValue("photo", undefined);
+    }
+  }, [selectedServiceType, step2Form]);
 
   // Step 1: Submit personal info and validate location
   const onStep1Submit = async (data: Step1Data) => {
@@ -125,7 +164,27 @@ export default function RequestPage() {
     setError(null);
 
     try {
-      const result = await api.selectService(sessionId, data);
+      // Upload photo if provided (for home_lockout)
+      let photoId: string | null = null;
+      if (data.service_type === "home_lockout" && data.photo) {
+        photoId = await api.uploadPhoto(sessionId, data.photo);
+      }
+
+      // Submit service selection with car details
+      const serviceData: any = {
+        service_type: data.service_type,
+        urgency: data.urgency,
+        description: data.description,
+      };
+
+      // Add car details if car_lockout
+      if (data.service_type === "car_lockout") {
+        serviceData.car_make = data.car_make;
+        serviceData.car_model = data.car_model;
+        serviceData.car_year = data.car_year;
+      }
+
+      const result = await api.selectService(sessionId, serviceData);
       setDepositAmount(result.deposit_display);
       setStep(3);
     } catch (err) {
@@ -390,12 +449,151 @@ export default function RequestPage() {
                 </div>
               </div>
 
+              {/* Photo upload for home_lockout */}
+              {step2Form.watch("service_type") === "home_lockout" && (
+                <div>
+                  <label className="label">
+                    <Camera className="w-4 h-4 inline mr-2" />
+                    Photo of Your Door Lock (Required)
+                  </label>
+                  <div className="space-y-3">
+                    <div className="bg-brand-800/50 rounded-lg p-4 border border-brand-700">
+                      <p className="text-sm font-semibold text-white mb-2">
+                        How to take a proper photo:
+                      </p>
+                      <ul className="text-sm text-brand-300 space-y-1 list-disc list-inside">
+                        <li>Stand 2–4 feet from the door</li>
+                        <li>Make sure the entire lock and handle are visible</li>
+                        <li>Use good lighting</li>
+                      </ul>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        {...step2Form.register("photo", {
+                          onChange: (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              step2Form.setValue("photo", file);
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                setPhotoPreview(reader.result as string);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          },
+                        })}
+                        className="hidden"
+                        id="photo-upload"
+                      />
+                      <label
+                        htmlFor="photo-upload"
+                        className="block cursor-pointer"
+                      >
+                        <div className="border-2 border-dashed border-brand-700 rounded-lg p-8 text-center hover:border-copper-500 transition-colors">
+                          {photoPreview ? (
+                            <div className="relative">
+                              <img
+                                src={photoPreview}
+                                alt="Preview"
+                                className="max-h-48 mx-auto rounded-lg"
+                              />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPhotoPreview(null);
+                                  step2Form.setValue("photo", undefined);
+                                  const input = document.getElementById("photo-upload") as HTMLInputElement;
+                                  if (input) input.value = "";
+                                }}
+                                className="absolute top-2 right-2 bg-danger-500 text-white rounded-full p-1 hover:bg-danger-600"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <Upload className="w-12 h-12 mx-auto mb-3 text-brand-400" />
+                              <p className="text-white font-medium mb-1">
+                                Click to upload photo
+                              </p>
+                              <p className="text-sm text-brand-400">
+                                or use your camera
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      </label>
+                    </div>
+                    {step2Form.formState.errors.photo && (
+                      <p className="text-sm text-danger-500">
+                        {step2Form.formState.errors.photo.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Car details for car_lockout */}
+              {step2Form.watch("service_type") === "car_lockout" && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="label">
+                      <Car className="w-4 h-4 inline mr-2" />
+                      Car Make (Required)
+                    </label>
+                    <input
+                      {...step2Form.register("car_make")}
+                      className={`input ${step2Form.formState.errors.car_make ? "input-error" : ""}`}
+                      placeholder="e.g., Toyota, Ford, Honda"
+                    />
+                    {step2Form.formState.errors.car_make && (
+                      <p className="mt-1 text-sm text-danger-500">
+                        {step2Form.formState.errors.car_make.message}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="label">Car Model (Required)</label>
+                    <input
+                      {...step2Form.register("car_model")}
+                      className={`input ${step2Form.formState.errors.car_model ? "input-error" : ""}`}
+                      placeholder="e.g., Camry, F-150, Civic"
+                    />
+                    {step2Form.formState.errors.car_model && (
+                      <p className="mt-1 text-sm text-danger-500">
+                        {step2Form.formState.errors.car_model.message}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="label">Car Year (Required)</label>
+                    <input
+                      type="number"
+                      {...step2Form.register("car_year", { valueAsNumber: true })}
+                      className={`input ${step2Form.formState.errors.car_year ? "input-error" : ""}`}
+                      placeholder="e.g., 2020"
+                      min="1900"
+                      max="2100"
+                    />
+                    {step2Form.formState.errors.car_year && (
+                      <p className="mt-1 text-sm text-danger-500">
+                        {step2Form.formState.errors.car_year.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="label">Additional Details (Optional)</label>
                 <textarea
                   {...step2Form.register("description")}
                   className="input min-h-[100px]"
-                  placeholder="Any additional information about your situation..."
+                  placeholder="Describe your situation in detail"
                 />
               </div>
 
@@ -410,7 +608,16 @@ export default function RequestPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={isLoading || !step2Form.watch("service_type")}
+                  disabled={
+                    isLoading || 
+                    !step2Form.watch("service_type") ||
+                    (step2Form.watch("service_type") === "home_lockout" && !step2Form.watch("photo")) ||
+                    (step2Form.watch("service_type") === "car_lockout" && (
+                      !step2Form.watch("car_make")?.trim() ||
+                      !step2Form.watch("car_model")?.trim() ||
+                      !step2Form.watch("car_year")
+                    ))
+                  }
                   className="btn-primary flex-1"
                 >
                   {isLoading ? (

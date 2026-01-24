@@ -38,6 +38,11 @@ class JobResponse(BaseModel):
     urgency: str
     description: str | None = None
     
+    # Car details (for car_lockout)
+    car_make: str | None = None
+    car_model: str | None = None
+    car_year: int | None = None
+    
     # Location
     address: str
     city: str

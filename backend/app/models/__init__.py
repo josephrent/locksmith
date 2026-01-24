@@ -6,6 +6,7 @@ from app.models.job_offer import JobOffer, OfferStatus
 from app.models.message import Message, MessageDirection
 from app.models.audit_event import AuditEvent
 from app.models.request_session import RequestSession, SessionStatus
+from app.models.photo import Photo
 
 __all__ = [
     "Locksmith",
@@ -18,4 +19,5 @@ __all__ = [
     "AuditEvent",
     "RequestSession",
     "SessionStatus",
+    "Photo",
 ]

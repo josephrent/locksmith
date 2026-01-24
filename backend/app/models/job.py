@@ -48,6 +48,11 @@ class Job(Base):
     urgency: Mapped[str] = mapped_column(String(50), default="standard")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     
+    # Car details (for car_lockout service)
+    car_make: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    car_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    car_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    
     # Location
     address: Mapped[str] = mapped_column(String(500), nullable=False)
     city: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
@@ -107,6 +112,7 @@ class Job(Base):
     job_offers = relationship("JobOffer", back_populates="job", cascade="all, delete-orphan")
     messages = relationship("Message", back_populates="job", cascade="all, delete-orphan")
     request_session = relationship("RequestSession", back_populates="job")
+    photos = relationship("Photo", back_populates="job", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Job {self.id} - {self.service_type} ({self.status})>"
