@@ -73,7 +73,8 @@ locksmith/
 │   │   ├── database.py    # DB connection
 │   │   └── main.py        # FastAPI app
 │   ├── alembic/           # Migrations
-│   └── requirements.txt
+│   ├── pyproject.toml     # Dependencies (uv)
+│   └── uv.lock            # Lock file
 │
 ├── frontend/
 │   ├── src/
@@ -97,7 +98,8 @@ locksmith/
 ## Quick Start
 
 ### Prerequisites
-- Python 3.13+
+- **uv** (Python package manager) - [Install uv](https://github.com/astral-sh/uv)
+- Python 3.12+ (uv will automatically install the correct version)
 - Node.js 20+
 - PostgreSQL 15+
 - Redis 7+
@@ -107,22 +109,18 @@ locksmith/
 ```bash
 cd backend
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (uv will create venv automatically)
+uv sync
 
 # Set up environment variables
 cp .env.example .env
 # Edit .env with your credentials
 
 # Run migrations
-alembic upgrade head
+uv run alembic upgrade head
 
 # Start server
-uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
 ### Frontend Setup
@@ -246,6 +244,10 @@ CREATED → DISPATCHING → OFFERED → ASSIGNED → EN_ROUTE → COMPLETED
 ### Backend (Railway/Render/Fly.io)
 ```bash
 # Dockerfile or Procfile
+# Using uv (recommended)
+web: uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+# Or traditional pip (if uv not available)
 web: uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
 
