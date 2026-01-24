@@ -1,0 +1,36 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    # FastAPI and ASGI
+    "fastapi==0.109.2",
+    "uvicorn[standard]==0.27.1",
+    "python-multipart==0.0.9",
+    # Database
+    "sqlalchemy==2.0.25",
+    "asyncpg==0.29.0",
+    "psycopg2-binary==2.9.9",
+    "alembic==1.13.1",
+    "greenlet==3.0.3",
+    # Redis
+    "redis==5.0.1",
+    # Validation
+    "pydantic==2.6.1",
+    "pydantic-settings==2.1.0",
+    "email-validator==2.1.0.post1",
+    # External Services
+    "twilio==8.13.0",
+    "stripe==8.2.0",
+    "googlemaps==4.10.0",
+    "httpx==0.26.0",
+    # Utilities
+    "python-dotenv==1.0.1",
+    "python-dateutil==2.8.2",
+    # Testing
+    "pytest>=7.0.0,<8.0.0",
+    "pytest-asyncio==0.23.4",
+    "pytest-cov==4.1.0",
+]
