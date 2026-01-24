@@ -12,7 +12,11 @@ from app.config import get_settings
 from app.models.request_session import RequestSession, SessionStatus
 from app.models.job import Job
 from app.models.photo import Photo
+from app.models.job_offer import JobOffer, OfferStatus
+from app.models.locksmith import Locksmith
 from app.services.job_service import JobService
+from app.services.locksmith_service import LocksmithService
+from sqlalchemy.orm import selectinload
 from app.schemas.request_session import (
     RequestSessionCreate,
     LocationValidation,
@@ -146,12 +150,15 @@ async def validate_location(
 async def select_service(
     session_id: UUID,
     data: ServiceSelection,
+    background_tasks: BackgroundTasks,
     db: DbSession,
+    sms_service: SMSServiceDep,
 ):
     """
     Step 2: Select service type and urgency.
     
-    Returns the deposit amount for payment.
+    Sends SMS to all available locksmiths asking for quotes.
+    Sets status to PENDING_APPROVAL.
     """
     # Get session
     result = await db.execute(
@@ -180,13 +187,104 @@ async def select_service(
     session.description = data.description
     session.deposit_amount = deposit_amount
     session.step_reached = 2
-    session.status = SessionStatus.SERVICE_SELECTED
+    session.status = SessionStatus.PENDING_APPROVAL
     
     # Store car details if provided
     if data.service_type == "car_lockout":
         session.car_make = data.car_make
         session.car_model = data.car_model
         session.car_year = data.car_year
+
+    await db.commit()
+
+    # Find available locksmiths and send SMS in background
+    locksmith_service = LocksmithService(db)
+    available_locksmiths = await locksmith_service.find_available_for_job(
+        city=session.city or "",
+        service_type=data.service_type,
+        exclude_ids=None,  # No exclusions for initial request
+        limit=100,  # Get all available locksmiths
+    )
+
+    # Log for debugging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Searching for locksmiths: city='{session.city}', service_type='{data.service_type}'")
+    logger.info(f"Found {len(available_locksmiths)} locksmiths")
+    
+    if not available_locksmiths:
+        logger.warning(f"⚠️ NO LOCKSMITHS FOUND!")
+        logger.warning(f"   City searched: '{session.city}'")
+        logger.warning(f"   Service type: '{data.service_type}'")
+        logger.warning(f"   Check: locksmith.primary_city must match exactly (case-sensitive)")
+        logger.warning(f"   Check: locksmith.supports_{data.service_type} must be true")
+        logger.warning(f"   Check: locksmith.is_active and is_available must both be true")
+        
+        # Try to find all locksmiths in database for debugging
+        all_locksmiths_result = await db.execute(
+            select(Locksmith)
+        )
+        all_locksmiths = all_locksmiths_result.scalars().all()
+        logger.info(f"   Total locksmiths in database: {len(all_locksmiths)}")
+        for ls in all_locksmiths:
+            logger.info(f"   - {ls.display_name}: city='{ls.primary_city}', active={ls.is_active}, available={ls.is_available}, "
+                       f"home={ls.supports_home_lockout}, car={ls.supports_car_lockout}, rekey={ls.supports_rekey}, smart={ls.supports_smart_lock}")
+
+    # Send SMS to all locksmiths and create offer records
+    service_names = {
+        "home_lockout": "Home Lockout",
+        "car_lockout": "Car Lockout",
+        "rekey": "Lock Rekey",
+        "smart_lock": "Smart Lock Install",
+    }
+    service_name = service_names.get(data.service_type, data.service_type)
+    
+    urgency_text = "EMERGENCY" if data.urgency == "emergency" else "Standard"
+    
+    # Build message with request details
+    message_parts = [
+        f"New {service_name} request - {urgency_text}",
+        f"Location: {session.address}",
+    ]
+    
+    if data.service_type == "car_lockout" and session.car_make:
+        message_parts.append(f"Vehicle: {session.car_make} {session.car_model} {session.car_year}")
+    
+    if session.description:
+        message_parts.append(f"Details: {session.description}")
+    
+    message_parts.append("Reply like this: Y $100 to quote, or N to decline")
+    
+    message = "\n".join(message_parts)
+
+    # Create offer records and send SMS
+    for locksmith in available_locksmiths:
+        try:
+            # Create offer record
+            offer = JobOffer(
+                request_session_id=session_id,
+                locksmith_id=locksmith.id,
+                wave_number=1,
+                status=OfferStatus.PENDING,
+            )
+            db.add(offer)
+            await db.flush()
+
+            # Log SMS attempt
+            logger.info(f"Sending SMS to locksmith {locksmith.display_name} at {locksmith.phone}")
+
+            # Send SMS
+            message_sid = await sms_service.send_sms(
+                to_phone=locksmith.phone,
+                body=message,
+                locksmith_id=locksmith.id,
+            )
+            offer.twilio_message_sid = message_sid
+            
+            logger.info(f"SMS sent to {locksmith.phone}, message_sid: {message_sid}")
+
+        except Exception as e:
+            logger.error(f"Failed to send offer to locksmith {locksmith.id} ({locksmith.display_name}): {str(e)}", exc_info=True)
 
     await db.commit()
 
@@ -424,3 +522,49 @@ async def get_session_status(
     if session.job:
         response.job_id = session.job.id
     return response
+
+
+@router.get("/{session_id}/offers")
+async def get_session_offers(
+    session_id: UUID,
+    db: DbSession,
+):
+    """Get all job offers for a request session."""
+    # Verify session exists
+    result = await db.execute(
+        select(RequestSession).where(RequestSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Get all offers for this session with locksmith info
+    offers_result = await db.execute(
+        select(JobOffer)
+        .where(JobOffer.request_session_id == session_id)
+        .options(selectinload(JobOffer.locksmith))
+        .order_by(JobOffer.sent_at.desc())
+    )
+    offers = offers_result.scalars().all()
+
+    # Format response
+    offers_data = []
+    for offer in offers:
+        offer_data = {
+            "id": str(offer.id),
+            "locksmith_name": offer.locksmith.display_name if offer.locksmith else "Unknown",
+            "locksmith_phone": offer.locksmith.phone if offer.locksmith else None,
+            "status": offer.status.value,
+            "quoted_price": offer.quoted_price,
+            "quoted_price_display": f"${offer.quoted_price / 100:.2f}" if offer.quoted_price else None,
+            "sent_at": offer.sent_at.isoformat() if offer.sent_at else None,
+            "responded_at": offer.responded_at.isoformat() if offer.responded_at else None,
+        }
+        offers_data.append(offer_data)
+
+    return {
+        "session_id": str(session_id),
+        "offers": offers_data,
+        "total_offers": len(offers_data),
+        "accepted_offers": len([o for o in offers_data if o["status"] == "accepted"]),
+    }

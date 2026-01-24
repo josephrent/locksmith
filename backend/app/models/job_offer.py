@@ -14,7 +14,7 @@ class OfferStatus(str, Enum):
     """Job offer states."""
     
     PENDING = "pending"       # SMS sent, awaiting response
-    ACCEPTED = "accepted"     # Locksmith said YES
+    ACCEPTED = "accepted"     # Locksmith said YES with quote
     DECLINED = "declined"     # Locksmith said NO
     EXPIRED = "expired"       # No response within window
     CANCELED = "canceled"     # Offer withdrawn (job assigned to someone else)
@@ -36,11 +36,17 @@ class JobOffer(Base):
         default=uuid.uuid4,
     )
     
-    # References
-    job_id: Mapped[uuid.UUID] = mapped_column(
+    # References (job_id is nullable to support offers before job creation)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("jobs.id"),
-        nullable=False,
+        nullable=True,
+        index=True,
+    )
+    request_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("request_sessions.id"),
+        nullable=True,
         index=True,
     )
     locksmith_id: Mapped[uuid.UUID] = mapped_column(
@@ -49,6 +55,9 @@ class JobOffer(Base):
         nullable=False,
         index=True,
     )
+    
+    # Quote/Price (in cents, set when locksmith responds with Y [Price])
+    quoted_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
     
     # Wave tracking
     wave_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -75,6 +84,7 @@ class JobOffer(Base):
 
     # Relationships
     job = relationship("Job", back_populates="job_offers")
+    request_session = relationship("RequestSession", back_populates="job_offers")
     locksmith = relationship("Locksmith", back_populates="job_offers")
 
     def __repr__(self) -> str:

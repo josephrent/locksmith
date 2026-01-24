@@ -45,18 +45,22 @@ class SMSService:
         )
 
         try:
-            # In development mode without Twilio, just log the message
-            if settings.app_env == "development" and not self.client:
-                message_record.provider_message_id = f"dev_msg_{job_id or 'none'}"
-                message_record.delivery_status = "dev_mode"
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.info(f"[DEV MODE] Would send SMS to {to_phone}: {body}")
+            # Check if Twilio is configured
+            if not self.client:
+                # In development mode without Twilio, just log the message
+                if settings.app_env == "development":
+                    message_record.provider_message_id = f"dev_msg_{job_id or 'none'}"
+                    message_record.delivery_status = "dev_mode"
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"[DEV MODE - Twilio not configured] Would send SMS to {to_phone}: {body}")
+                else:
+                    # Production mode but Twilio not configured - this is an error
+                    raise ValueError(
+                        "Twilio not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER environment variables."
+                    )
             else:
                 # Send via Twilio
-                if not self.client:
-                    raise ValueError("Twilio client not initialized")
-                
                 twilio_message = self.client.messages.create(
                     body=body,
                     from_=self.from_phone,
@@ -65,6 +69,10 @@ class SMSService:
 
                 message_record.provider_message_id = twilio_message.sid
                 message_record.delivery_status = twilio_message.status
+                
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"SMS sent successfully to {to_phone}, SID: {twilio_message.sid}, Status: {twilio_message.status}")
 
         except (TwilioRestException, ValueError) as e:
             message_record.error_code = str(getattr(e, 'code', 'unknown'))
@@ -108,7 +116,10 @@ class SMSService:
         """Send job creation confirmation to customer."""
         await self.send_sms(
             to_phone=customer_phone,
-            body="Your locksmith request has been received! We're finding someone to help you now.",
+            body=(
+                "Your locksmith request has been received! We're finding someone to help you now.\n\n"
+                "Reply STOP to opt out. Msg & data rates may apply."
+            ),
             job_id=job_id,
         )
 

@@ -17,6 +17,7 @@ class SessionStatus(str, Enum):
     LOCATION_VALIDATED = "location_validated"  # Address in service area
     LOCATION_REJECTED = "location_rejected"    # Address not in service area
     SERVICE_SELECTED = "service_selected"      # Service type chosen
+    PENDING_APPROVAL = "pending_approval"      # Waiting for locksmith quotes
     PAYMENT_PENDING = "payment_pending"        # Awaiting payment
     PAYMENT_COMPLETED = "payment_completed"    # Deposit captured, job created
     ABANDONED = "abandoned"                    # User left without completing
@@ -96,6 +97,7 @@ class RequestSession(Base):
 
     # Relationships
     job = relationship("Job", back_populates="request_session", uselist=False)
+    job_offers = relationship("JobOffer", back_populates="request_session", cascade="all, delete-orphan")
     photos = relationship("Photo", back_populates="request_session", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
