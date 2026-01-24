@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Key, Shield, Clock, Phone } from "lucide-react";
+import { Key, Shield, Clock } from "lucide-react";
 
 export default function Home() {
   return (
@@ -20,7 +20,7 @@ export default function Home() {
         <div className="relative">
           {/* Navigation */}
           <nav className="container mx-auto px-6 py-6">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-copper-500 rounded-lg flex items-center justify-center">
                   <Key className="w-6 h-6 text-white" />
@@ -29,12 +29,6 @@ export default function Home() {
                   Locksmith
                 </span>
               </div>
-              <Link
-                href="/request"
-                className="btn-primary"
-              >
-                Get Help Now
-              </Link>
             </div>
           </nav>
 
@@ -51,20 +45,13 @@ export default function Home() {
                 for home lockouts, car lockouts, rekeying, and smart lock
                 installation.
               </p>
-              <div className="mt-10 flex flex-col sm:flex-row gap-4 animate-slide-up">
+              <div className="mt-10 animate-slide-up">
                 <Link
                   href="/request"
                   className="btn-primary text-lg px-8 py-4"
                 >
                   Request a Locksmith
                 </Link>
-                <a
-                  href="tel:+18001234567"
-                  className="btn-secondary text-lg px-8 py-4"
-                >
-                  <Phone className="w-5 h-5 mr-2" />
-                  Call Now
-                </a>
               </div>
             </div>
           </div>
@@ -103,22 +90,18 @@ export default function Home() {
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             <ServiceCard
               title="Home Lockout"
-              price="From $49"
               description="Locked out of your house? We'll get you back inside safely."
             />
             <ServiceCard
               title="Car Lockout"
-              price="From $59"
               description="Keys in the car? We handle all makes and models."
             />
             <ServiceCard
               title="Lock Rekey"
-              price="From $79"
               description="New home? Lost keys? Get your locks rekeyed for peace of mind."
             />
             <ServiceCard
               title="Smart Locks"
-              price="From $99"
               description="Upgrade to keyless entry with professional installation."
             />
           </div>
@@ -190,19 +173,16 @@ function FeatureCard({
 
 function ServiceCard({
   title,
-  price,
   description,
 }: {
   title: string;
-  price: string;
   description: string;
 }) {
   return (
     <div className="card group hover:border-copper-500/50 transition-colors">
-      <h3 className="font-display text-lg font-semibold text-white mb-1">
+      <h3 className="font-display text-lg font-semibold text-white mb-3">
         {title}
       </h3>
-      <p className="text-copper-400 font-semibold mb-3">{price}</p>
       <p className="text-brand-400 text-sm">{description}</p>
     </div>
   );

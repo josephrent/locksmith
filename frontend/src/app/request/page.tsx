@@ -32,6 +32,9 @@ const step1Schema = z.object({
   customer_phone: z.string().min(10, "Please enter a valid phone number"),
   customer_email: z.string().email("Please enter a valid email").optional().or(z.literal("")),
   address: z.string().min(10, "Please enter your full address"),
+  sms_consent: z.boolean().refine((val) => val === true, {
+    message: "You must consent to receive SMS messages to continue",
+  }),
 });
 
 const step2Schema = z.object({
@@ -102,16 +105,19 @@ export default function RequestPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locationRejected, setLocationRejected] = useState(false);
-  const [depositAmount, setDepositAmount] = useState<string | null>(null);
-  const [jobId, setJobId] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   const step1Form = useForm<Step1Data>({
     resolver: zodResolver(step1Schema),
+    mode: "onChange",
+    defaultValues: {
+      sms_consent: false,
+    },
   });
 
   const step2Form = useForm<Step2Data>({
     resolver: zodResolver(step2Schema),
+    mode: "onChange",
     defaultValues: {
       urgency: "standard",
     },
@@ -157,7 +163,7 @@ export default function RequestPage() {
     }
   };
 
-  // Step 2: Select service
+  // Step 2: Select service (final step)
   const onStep2Submit = async (data: Step2Data) => {
     if (!sessionId) return;
     setIsLoading(true);
@@ -184,34 +190,12 @@ export default function RequestPage() {
         serviceData.car_year = data.car_year;
       }
 
-      const result = await api.selectService(sessionId, serviceData);
-      setDepositAmount(result.deposit_display);
+      await api.selectService(sessionId, serviceData);
+      
+      // Move to confirmation step
       setStep(3);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Step 3: Payment (simplified for demo)
-  const onPaymentSubmit = async () => {
-    if (!sessionId) return;
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // First, create the payment intent
-      const paymentIntent = await api.createPaymentIntent(sessionId);
-      
-      // In a real app, you'd integrate Stripe Elements here and process the payment
-      // For demo, we'll simulate payment success by calling complete
-      // Note: In production, Stripe webhook would handle this
-      const result = await api.completeRequest(sessionId);
-      setJobId(result.job_id);
-      setStep(4);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Payment failed");
     } finally {
       setIsLoading(false);
     }
@@ -240,42 +224,53 @@ export default function RequestPage() {
       </header>
 
       <main className="container mx-auto px-6 py-12 max-w-2xl">
-        {/* Progress Steps */}
-        <div className="mb-12">
-          <div className="flex items-center justify-between">
-            {[1, 2, 3].map((s) => (
-              <div key={s} className="flex items-center">
-                <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-colors ${
-                    step >= s
-                      ? "bg-copper-500 text-white"
-                      : "bg-brand-800 text-brand-500"
-                  }`}
-                >
-                  {step > s ? <Check className="w-5 h-5" /> : s}
-                </div>
-                {s < 3 && (
+        {/* Progress Steps - Only show on steps 1 and 2 */}
+        {step < 3 && (
+          <div className="mb-12">
+            <div className="flex items-center justify-center">
+              <div className="flex items-center">
+                {/* Step 1 */}
+                <div className="flex flex-col items-center">
                   <div
-                    className={`w-24 sm:w-32 h-1 mx-2 rounded transition-colors ${
-                      step > s ? "bg-copper-500" : "bg-brand-800"
+                    className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-colors ${
+                      step >= 1
+                        ? "bg-copper-500 text-white"
+                        : "bg-brand-800 text-brand-500"
                     }`}
-                  />
-                )}
+                  >
+                    {step > 1 ? <Check className="w-5 h-5" /> : 1}
+                  </div>
+                  <span className={`mt-2 text-sm text-center ${step >= 1 ? "text-white" : "text-brand-500"}`}>
+                    Your Info
+                  </span>
+                </div>
+                
+                {/* Connector Line */}
+                <div
+                  className={`w-24 sm:w-32 h-1 mx-2 rounded transition-colors ${
+                    step > 1 ? "bg-copper-500" : "bg-brand-800"
+                  }`}
+                />
+                
+                {/* Step 2 */}
+                <div className="flex flex-col items-center">
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-colors ${
+                      step >= 2
+                        ? "bg-copper-500 text-white"
+                        : "bg-brand-800 text-brand-500"
+                    }`}
+                  >
+                    {step > 2 ? <Check className="w-5 h-5" /> : 2}
+                  </div>
+                  <span className={`mt-2 text-sm text-center ${step >= 2 ? "text-white" : "text-brand-500"}`}>
+                    Service
+                  </span>
+                </div>
               </div>
-            ))}
+            </div>
           </div>
-          <div className="flex justify-between mt-3 text-sm">
-            <span className={step >= 1 ? "text-white" : "text-brand-500"}>
-              Your Info
-            </span>
-            <span className={step >= 2 ? "text-white" : "text-brand-500"}>
-              Service
-            </span>
-            <span className={step >= 3 ? "text-white" : "text-brand-500"}>
-              Payment
-            </span>
-          </div>
-        </div>
+        )}
 
         {/* Error Message */}
         {error && (
@@ -351,10 +346,43 @@ export default function RequestPage() {
                 )}
               </div>
 
+              {/* SMS Consent Checkbox */}
+              <div className="bg-brand-800/50 rounded-lg p-4 border border-brand-700">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    {...step1Form.register("sms_consent")}
+                    className="mt-1 w-4 h-4 rounded border-brand-600 bg-brand-900 text-copper-500 focus:ring-copper-500 focus:ring-2"
+                  />
+                  <div className="flex-1">
+                    <span className="text-white font-medium">
+                      I consent to receive SMS messages
+                    </span>
+                    <p className="text-sm text-brand-400 mt-1">
+                      By checking this box, you agree to receive text messages about your service request, 
+                      including quotes from locksmiths and status updates. Message and data rates may apply. 
+                      Message frequency varies. Reply STOP to opt out at any time. Reply HELP for help.
+                    </p>
+                    {step1Form.formState.errors.sms_consent && (
+                      <p className="mt-2 text-sm text-danger-500">
+                        {step1Form.formState.errors.sms_consent.message}
+                      </p>
+                    )}
+                  </div>
+                </label>
+              </div>
+
               <button
                 type="submit"
-                disabled={isLoading}
-                className="btn-primary w-full"
+                disabled={
+                  isLoading ||
+                  !step1Form.formState.isValid ||
+                  !step1Form.watch("customer_name")?.trim() ||
+                  !step1Form.watch("customer_phone")?.trim() ||
+                  !step1Form.watch("address")?.trim() ||
+                  !step1Form.watch("sms_consent")
+                }
+                className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -610,6 +638,7 @@ export default function RequestPage() {
                   type="submit"
                   disabled={
                     isLoading || 
+                    !step2Form.formState.isValid ||
                     !step2Form.watch("service_type") ||
                     (step2Form.watch("service_type") === "home_lockout" && !step2Form.watch("photo")) ||
                     (step2Form.watch("service_type") === "car_lockout" && (
@@ -618,7 +647,7 @@ export default function RequestPage() {
                       !step2Form.watch("car_year")
                     ))
                   }
-                  className="btn-primary flex-1"
+                  className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isLoading ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -634,82 +663,26 @@ export default function RequestPage() {
           </div>
         )}
 
-        {/* Step 3: Payment */}
+        {/* Step 3: Confirmation */}
         {step === 3 && (
-          <div className="card animate-fade-in">
-            <h1 className="font-display text-2xl font-bold text-white mb-2">
-              Confirm & Pay Deposit
-            </h1>
-            <p className="text-brand-400 mb-8">
-              A small deposit secures your locksmith. You&apos;ll pay the remainder on completion.
-            </p>
-
-            <div className="bg-brand-800/50 rounded-lg p-6 mb-8">
-              <div className="flex justify-between items-center mb-4">
-                <span className="text-brand-300">Service Deposit</span>
-                <span className="text-2xl font-bold text-copper-400">
-                  {depositAmount}
-                </span>
-              </div>
-              <p className="text-sm text-brand-500">
-                This deposit will be applied to your final bill. Full refund if no locksmith accepts.
-              </p>
-            </div>
-
-            <div className="space-y-4 mb-8">
-              <div className="bg-brand-800 rounded-lg p-4">
-                <p className="text-sm text-brand-400 mb-2">Payment Demo</p>
-                <p className="text-brand-300">
-                  In production, Stripe Elements would appear here for secure card input.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              <button
-                type="button"
-                onClick={() => setStep(2)}
-                className="btn-secondary flex-1"
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back
-              </button>
-              <button
-                onClick={onPaymentSubmit}
-                disabled={isLoading}
-                className="btn-primary flex-1"
-              >
-                {isLoading ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <>Pay {depositAmount}</>
-                )}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 4: Confirmation */}
-        {step === 4 && (
           <div className="card animate-fade-in text-center">
             <div className="w-20 h-20 bg-success-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
               <Check className="w-10 h-10 text-success-500" />
             </div>
             <h1 className="font-display text-2xl font-bold text-white mb-2">
-              Request Submitted!
+              Request Sent!
             </h1>
             <p className="text-brand-400 mb-8">
-              We&apos;re finding a locksmith for you now. You&apos;ll receive an SMS when one accepts.
+              Your request has been sent for approval to various locksmiths. 
+              They will provide quotes and you can view them on the next page.
             </p>
-
-            <div className="bg-brand-800/50 rounded-lg p-6 mb-8 text-left">
-              <p className="text-sm text-brand-400 mb-2">Reference Number</p>
-              <p className="font-mono text-white">{jobId?.slice(0, 8).toUpperCase()}</p>
-            </div>
 
             <Link href="/" className="btn-secondary">
               Back to Home
             </Link>
+            <p className="text-sm text-brand-500 mt-4">
+              You will receive a text message with a link to view quotes when locksmiths respond.
+            </p>
           </div>
         )}
       </main>
