@@ -5,16 +5,17 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
+
 # Create /app/.venv with prod deps
 RUN uv sync --frozen --no-dev
 
+# Sanity check
+RUN /app/.venv/bin/python -m uvicorn --version
+
 COPY . .
 
-# Make venv executables available
-ENV PATH="/app/.venv/bin:$PATH"
-
-# Fly will route to internal_port; PORT env is nice to honor too
 ENV PORT=8000
 EXPOSE 8000
 
-CMD ["sh", "-lc", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["/bin/sh", "-lc", "/app/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
