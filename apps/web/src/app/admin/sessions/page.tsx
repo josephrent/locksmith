@@ -146,10 +146,14 @@ export default function SessionsPage() {
                       <div className="flex items-center gap-1">
                         <span>{session.city}</span>
                         {session.is_in_service_area === false && (
-                          <XCircle className="w-4 h-4 text-danger-500" title="Outside service area" />
+                          <span title="Outside service area">
+                            <XCircle className="w-4 h-4 text-danger-500" />
+                          </span>
                         )}
                         {session.is_in_service_area === true && (
-                          <CheckCircle className="w-4 h-4 text-success-500" title="In service area" />
+                          <span title="In service area">
+                            <CheckCircle className="w-4 h-4 text-success-500" />
+                          </span>
                         )}
                       </div>
                     ) : (
