@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -58,6 +58,8 @@ class RequestSession(Base):
     # Location (collected in step 1)
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
     city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_in_service_area: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     
     # Service selection (collected in step 2)

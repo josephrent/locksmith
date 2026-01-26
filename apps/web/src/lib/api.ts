@@ -16,6 +16,8 @@ export interface RequestSession {
   customer_email?: string | null;
   address?: string | null;
   city?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   is_in_service_area?: boolean | null;
   service_type?: string | null;
   urgency?: string | null;
@@ -34,13 +36,19 @@ export interface LocationValidationData {
   customer_name: string;
   customer_phone: string;
   customer_email?: string | null;
-  address: string;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  location_method?: "address" | "pin";
 }
 
 export interface LocationValidationResponse {
   session_id: string;
   is_in_service_area: boolean;
   city?: string | null;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   message?: string | null;
 }
 

@@ -36,6 +36,8 @@ class JobService:
             description=session.description,
             address=session.address,
             city=session.city,
+            latitude=session.latitude,
+            longitude=session.longitude,
             deposit_amount=session.deposit_amount,
             stripe_payment_intent_id=stripe_payment_intent_id,
             stripe_payment_status="succeeded",

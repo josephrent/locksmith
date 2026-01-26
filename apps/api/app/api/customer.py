@@ -67,9 +67,13 @@ async def validate_location(
 ):
     """
     Step 1: Validate customer info and location.
-    
+
     Checks if the address is within our service areas.
+    Supports both address entry and pin drop (reverse geocoding).
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     # Get session
     result = await db.execute(
         select(RequestSession).where(RequestSession.id == session_id)
@@ -82,49 +86,72 @@ async def validate_location(
     session.customer_name = data.customer_name
     session.customer_phone = data.customer_phone
     session.customer_email = data.customer_email
-    session.address = data.address
 
-    # Validate address using Google Maps
+    # Validate location using Google Maps
     city = None
+    address = data.address
+    latitude = data.latitude
+    longitude = data.longitude
     is_in_service_area = False
-    
-    # Try to geocode the address
+
     try:
         if not settings.google_maps_api_key:
             raise ValueError("Google Maps API key not configured")
-        
-        gmaps = googlemaps.Client(key=settings.google_maps_api_key)
-        geocode_result = gmaps.geocode(data.address)
-        
-        if geocode_result:
-            # Extract city from address components
-            for component in geocode_result[0].get("address_components", []):
-                if "locality" in component.get("types", []):
-                    city = component["long_name"]
-                    break
 
-            # Check if city is in service areas (case-insensitive)
-            if city:
-                # Normalize for comparison
-                city_normalized = city.strip()
-                service_areas_normalized = [area.strip() for area in settings.service_areas]
-                
-                if city_normalized in service_areas_normalized:
-                    is_in_service_area = True
+        gmaps = googlemaps.Client(key=settings.google_maps_api_key)
+
+        if data.location_method == "pin" and latitude is not None and longitude is not None:
+            # Reverse geocode from coordinates
+            reverse_result = gmaps.reverse_geocode((latitude, longitude))
+
+            if reverse_result:
+                # Get formatted address from reverse geocode
+                address = reverse_result[0].get("formatted_address", "")
+
+                # Extract city from address components
+                for component in reverse_result[0].get("address_components", []):
+                    if "locality" in component.get("types", []):
+                        city = component["long_name"]
+                        break
+        else:
+            # Forward geocode from address
+            geocode_result = gmaps.geocode(address)
+
+            if geocode_result:
+                # Extract coordinates from geocode result
+                location = geocode_result[0].get("geometry", {}).get("location", {})
+                latitude = location.get("lat")
+                longitude = location.get("lng")
+
+                # Extract city from address components
+                for component in geocode_result[0].get("address_components", []):
+                    if "locality" in component.get("types", []):
+                        city = component["long_name"]
+                        break
+
+        # Check if city is in service areas (case-insensitive)
+        if city:
+            city_normalized = city.strip()
+            service_areas_normalized = [area.strip() for area in settings.service_areas]
+
+            if city_normalized in service_areas_normalized:
+                is_in_service_area = True
 
     except Exception as e:
-        # Log error but don't expose to user
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Geocoding error: {str(e)}")
-        
-        # In development mode, if geocoding fails, accept any address for testing
+
+        # In development mode, if geocoding fails, accept any location for testing
         if settings.app_env == "development":
             city = "Laredo"  # Default for testing
             is_in_service_area = True
-        # Otherwise, geocoding failure means not in service area
+            if data.location_method == "pin" and latitude and longitude:
+                address = f"Pin at {latitude:.6f}, {longitude:.6f}"
 
+    # Update session with location data
+    session.address = address
     session.city = city
+    session.latitude = latitude
+    session.longitude = longitude
     session.is_in_service_area = is_in_service_area
 
     if is_in_service_area:
@@ -142,6 +169,9 @@ async def validate_location(
         session_id=session_id,
         is_in_service_area=is_in_service_area,
         city=city,
+        address=address,
+        latitude=latitude,
+        longitude=longitude,
         message=message,
     )
 

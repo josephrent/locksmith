@@ -24,17 +24,30 @@ import {
   X,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import { LocationInput } from "@/components/LocationInput";
 
 // Form schemas
 const step1Schema = z.object({
   customer_name: z.string().min(2, "Name must be at least 2 characters"),
   customer_phone: z.string().min(10, "Please enter a valid phone number"),
   customer_email: z.string().email("Please enter a valid email").optional().or(z.literal("")),
-  address: z.string().min(10, "Please enter your full address"),
+  address: z.string().optional(),
+  latitude: z.number().nullable().optional(),
+  longitude: z.number().nullable().optional(),
+  location_method: z.enum(["address", "pin"]).default("address"),
   sms_consent: z.boolean().refine((val) => val === true, {
     message: "You must consent to receive SMS messages to continue",
   }),
+}).refine((data) => {
+  // Require either address or coordinates based on location_method
+  if (data.location_method === "pin") {
+    return data.latitude != null && data.longitude != null;
+  } else {
+    return data.address && data.address.length >= 10;
+  }
+}, {
+  message: "Please enter an address or drop a pin on the map",
+  path: ["address"],
 });
 
 const step2Schema = z.object({
@@ -112,6 +125,9 @@ export default function RequestPage() {
     mode: "onChange",
     defaultValues: {
       sms_consent: false,
+      location_method: "address",
+      latitude: null,
+      longitude: null,
     },
   });
 
@@ -146,8 +162,19 @@ export default function RequestPage() {
         setSessionId(session.id);
       }
 
+      // Build location data based on method
+      const locationData = {
+        customer_name: data.customer_name,
+        customer_phone: data.customer_phone,
+        customer_email: data.customer_email || null,
+        address: data.address || null,
+        latitude: data.latitude || null,
+        longitude: data.longitude || null,
+        location_method: data.location_method,
+      };
+
       // Validate location
-      const result = await api.validateLocation(currentSessionId, data);
+      const result = await api.validateLocation(currentSessionId, locationData);
 
       if (!result.is_in_service_area) {
         setLocationRejected(true);
@@ -329,14 +356,12 @@ export default function RequestPage() {
               <div>
                 <label className="label">
                   <MapPin className="w-4 h-4 inline mr-2" />
-                  Full Address
+                  Location
                 </label>
-                <AddressAutocomplete
+                <LocationInput
                   register={step1Form.register}
                   setValue={step1Form.setValue}
-                  error={step1Form.formState.errors.address}
-                  className="input"
-                  placeholder="123 Main St, San Francisco, CA 94102"
+                  addressError={step1Form.formState.errors.address}
                   apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ""}
                 />
                 {step1Form.formState.errors.address && (
@@ -379,8 +404,9 @@ export default function RequestPage() {
                   !step1Form.formState.isValid ||
                   !step1Form.watch("customer_name")?.trim() ||
                   !step1Form.watch("customer_phone")?.trim() ||
-                  !step1Form.watch("address")?.trim() ||
-                  !step1Form.watch("sms_consent")
+                  !step1Form.watch("sms_consent") ||
+                  (step1Form.watch("location_method") === "address" && !step1Form.watch("address")?.trim()) ||
+                  (step1Form.watch("location_method") === "pin" && (step1Form.watch("latitude") == null || step1Form.watch("longitude") == null))
                 }
                 className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
               >

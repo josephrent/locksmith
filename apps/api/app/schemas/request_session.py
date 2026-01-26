@@ -3,6 +3,7 @@
 from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
+from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 import re
 
@@ -20,11 +21,14 @@ class RequestSessionCreate(BaseModel):
 
 class LocationValidation(BaseModel):
     """Schema for Step 1 - Personal info and location validation."""
-    
+
     customer_name: str = Field(..., min_length=2, max_length=255)
     customer_phone: str = Field(..., min_length=10, max_length=20)
     customer_email: str | None = Field(None, max_length=255)
-    address: str = Field(..., min_length=10, max_length=500)
+    address: str | None = Field(None, max_length=500)
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+    location_method: Literal["address", "pin"] = Field(default="address")
 
     @field_validator("customer_phone")
     @classmethod
@@ -39,13 +43,27 @@ class LocationValidation(BaseModel):
             return f"+{digits}"
         raise ValueError("Invalid phone number format")
 
+    @model_validator(mode="after")
+    def validate_location(self) -> "LocationValidation":
+        """Require either address or coordinates."""
+        if self.location_method == "pin":
+            if self.latitude is None or self.longitude is None:
+                raise ValueError("Latitude and longitude are required when using pin location")
+        else:
+            if not self.address or len(self.address.strip()) < 10:
+                raise ValueError("Address is required and must be at least 10 characters")
+        return self
+
 
 class LocationValidationResponse(BaseModel):
     """Response for location validation."""
-    
+
     session_id: UUID
     is_in_service_area: bool
     city: str | None = None
+    address: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     message: str | None = None
 
 
@@ -121,6 +139,8 @@ class RequestSessionResponse(BaseModel):
     # Location
     address: str | None = None
     city: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     is_in_service_area: bool | None = None
     
     # Service
