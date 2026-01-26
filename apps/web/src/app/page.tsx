@@ -20,7 +20,7 @@ export default function Home() {
         <div className="relative">
           {/* Navigation */}
           <nav className="container mx-auto px-6 py-6">
-            <div className="flex items-center">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-copper-500 rounded-lg flex items-center justify-center">
                   <Key className="w-6 h-6 text-white" />
@@ -28,6 +28,14 @@ export default function Home() {
                 <span className="font-display text-2xl font-bold text-white">
                   Locksmith
                 </span>
+              </div>
+              <div className="flex items-center gap-4">
+                <Link href="/faq" className="text-brand-300 hover:text-white transition-colors font-medium">
+                  FAQ
+                </Link>
+                <Link href="/contact" className="text-brand-300 hover:text-white transition-colors font-medium">
+                  Contact
+                </Link>
               </div>
             </div>
           </nav>
@@ -105,25 +113,6 @@ export default function Home() {
               description="Upgrade to keyless entry with professional installation."
             />
           </div>
-        </div>
-      </div>
-
-      {/* CTA */}
-      <div className="bg-copper-600 py-16">
-        <div className="container mx-auto px-6 text-center">
-          <h2 className="font-display text-3xl md:text-4xl font-bold text-white mb-6">
-            Don&apos;t Stay Locked Out
-          </h2>
-          <p className="text-copper-100 text-lg mb-8 max-w-2xl mx-auto">
-            Our network of professional locksmiths is ready to help you 24/7.
-            Get started in under a minute.
-          </p>
-          <Link
-            href="/request"
-            className="inline-flex items-center justify-center px-8 py-4 bg-white text-copper-700 font-semibold rounded-lg hover:bg-copper-50 transition-colors"
-          >
-            Request Service Now
-          </Link>
         </div>
       </div>
 
