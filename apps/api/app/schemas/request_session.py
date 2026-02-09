@@ -69,27 +69,15 @@ class LocationValidationResponse(BaseModel):
 
 class ServiceSelection(BaseModel):
     """Schema for Step 2 - Service selection."""
-    
+
     service_type: str = Field(..., pattern="^(home_lockout|car_lockout|rekey|smart_lock)$")
     urgency: str = Field("standard", pattern="^(emergency|standard)$")
     description: str | None = Field(None, max_length=1000)
-    
-    # Car details (required for car_lockout)
+
+    # Car details (optional for car_lockout)
     car_make: str | None = Field(None, max_length=100)
     car_model: str | None = Field(None, max_length=100)
     car_year: int | None = Field(None, ge=1900, le=2100)
-    
-    @model_validator(mode="after")
-    def validate_car_fields(self) -> "ServiceSelection":
-        """Require car fields if service_type is car_lockout."""
-        if self.service_type == "car_lockout":
-            if not self.car_make or not self.car_make.strip():
-                raise ValueError("Car make is required for car lockout service")
-            if not self.car_model or not self.car_model.strip():
-                raise ValueError("Car model is required for car lockout service")
-            if self.car_year is None:
-                raise ValueError("Car year is required for car lockout service")
-        return self
 
 
 class ServiceSelectionResponse(BaseModel):

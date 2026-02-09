@@ -54,32 +54,21 @@ const step2Schema = z.object({
   service_type: z.enum(["home_lockout", "car_lockout", "rekey", "smart_lock"]),
   urgency: z.enum(["standard", "emergency"]),
   description: z.string().optional(),
-  // Photo required for home_lockout
+  // Photo required for home_lockout, rekey, and smart_lock
   photo: z.instanceof(File).optional(),
-  // Car details required for car_lockout
+  // Car details optional for car_lockout
   car_make: z.string().optional(),
   car_model: z.string().optional(),
   car_year: z.number().int().min(1900).max(2100).optional(),
 }).refine((data) => {
-  // Require photo for home_lockout
-  if (data.service_type === "home_lockout") {
+  // Require photo for home_lockout, rekey, and smart_lock
+  if (["home_lockout", "rekey", "smart_lock"].includes(data.service_type)) {
     return data.photo !== undefined && data.photo instanceof File;
   }
   return true;
 }, {
-  message: "Please upload a photo of your door lock",
+  message: "Please upload a photo of your lock",
   path: ["photo"],
-}).refine((data) => {
-  // Require car details for car_lockout
-  if (data.service_type === "car_lockout") {
-    return data.car_make && data.car_make.trim().length > 0 &&
-           data.car_model && data.car_model.trim().length > 0 &&
-           data.car_year !== undefined;
-  }
-  return true;
-}, {
-  message: "Car make, model, and year are required",
-  path: ["car_make"],
 });
 
 type Step1Data = z.infer<typeof step1Schema>;
@@ -139,10 +128,10 @@ export default function RequestPage() {
     },
   });
 
-  // Reset photo preview when service type changes
+  // Reset photo preview when switching to car_lockout (which doesn't need photo)
   const selectedServiceType = step2Form.watch("service_type");
   useEffect(() => {
-    if (selectedServiceType !== "home_lockout") {
+    if (selectedServiceType === "car_lockout") {
       setPhotoPreview(null);
       step2Form.setValue("photo", undefined);
     }
@@ -197,9 +186,9 @@ export default function RequestPage() {
     setError(null);
 
     try {
-      // Upload photo if provided (for home_lockout)
+      // Upload photo if provided (for home_lockout, rekey, smart_lock)
       let photoId: string | null = null;
-      if (data.service_type === "home_lockout" && data.photo) {
+      if (["home_lockout", "rekey", "smart_lock"].includes(data.service_type) && data.photo) {
         photoId = await api.uploadPhoto(sessionId, data.photo);
       }
 
@@ -380,13 +369,8 @@ export default function RequestPage() {
                     className="mt-1 w-4 h-4 rounded border-brand-600 bg-brand-900 text-copper-500 focus:ring-copper-500 focus:ring-2"
                   />
                   <div className="flex-1">
-                    <span className="text-white font-medium">
-                      I consent to receive SMS messages
-                    </span>
-                    <p className="text-sm text-brand-400 mt-1">
-                      By checking this box, you agree to receive text messages about your service request, 
-                      including quotes from locksmiths and status updates. Message and data rates may apply. 
-                      Message frequency varies. Reply STOP to opt out at any time. Reply HELP for help.
+                    <p className="text-sm text-brand-100">
+                      I consent to receive SMS messages from Locksmith Laredo regarding my service request, including quotes, dispatch notifications, and status updates. Message frequency varies. Message and data rates may apply. Reply STOP to opt out at any time. Reply HELP for help.
                     </p>
                     {step1Form.formState.errors.sms_consent && (
                       <p className="mt-2 text-sm text-danger-500">
@@ -503,12 +487,12 @@ export default function RequestPage() {
                 </div>
               </div>
 
-              {/* Photo upload for home_lockout */}
-              {step2Form.watch("service_type") === "home_lockout" && (
+              {/* Photo upload for home_lockout, rekey, and smart_lock */}
+              {["home_lockout", "rekey", "smart_lock"].includes(step2Form.watch("service_type")) && (
                 <div>
                   <label className="label">
                     <Camera className="w-4 h-4 inline mr-2" />
-                    Photo of Your Door Lock (Required)
+                    Photo of Your Lock (Required)
                   </label>
                   <div className="space-y-3">
                     <div className="bg-brand-800/50 rounded-lg p-4 border border-brand-700">
@@ -597,47 +581,32 @@ export default function RequestPage() {
                   <div>
                     <label className="label">
                       <Car className="w-4 h-4 inline mr-2" />
-                      Car Make (Required)
+                      Car Make (Optional)
                     </label>
                     <input
                       {...step2Form.register("car_make")}
-                      className={`input ${step2Form.formState.errors.car_make ? "input-error" : ""}`}
+                      className="input"
                       placeholder="e.g., Toyota, Ford, Honda"
                     />
-                    {step2Form.formState.errors.car_make && (
-                      <p className="mt-1 text-sm text-danger-500">
-                        {step2Form.formState.errors.car_make.message}
-                      </p>
-                    )}
                   </div>
                   <div>
-                    <label className="label">Car Model (Required)</label>
+                    <label className="label">Car Model (Optional)</label>
                     <input
                       {...step2Form.register("car_model")}
-                      className={`input ${step2Form.formState.errors.car_model ? "input-error" : ""}`}
+                      className="input"
                       placeholder="e.g., Camry, F-150, Civic"
                     />
-                    {step2Form.formState.errors.car_model && (
-                      <p className="mt-1 text-sm text-danger-500">
-                        {step2Form.formState.errors.car_model.message}
-                      </p>
-                    )}
                   </div>
                   <div>
-                    <label className="label">Car Year (Required)</label>
+                    <label className="label">Car Year (Optional)</label>
                     <input
                       type="number"
                       {...step2Form.register("car_year", { valueAsNumber: true })}
-                      className={`input ${step2Form.formState.errors.car_year ? "input-error" : ""}`}
+                      className="input"
                       placeholder="e.g., 2020"
                       min="1900"
                       max="2100"
                     />
-                    {step2Form.formState.errors.car_year && (
-                      <p className="mt-1 text-sm text-danger-500">
-                        {step2Form.formState.errors.car_year.message}
-                      </p>
-                    )}
                   </div>
                 </div>
               )}
@@ -663,15 +632,10 @@ export default function RequestPage() {
                 <button
                   type="submit"
                   disabled={
-                    isLoading || 
+                    isLoading ||
                     !step2Form.formState.isValid ||
                     !step2Form.watch("service_type") ||
-                    (step2Form.watch("service_type") === "home_lockout" && !step2Form.watch("photo")) ||
-                    (step2Form.watch("service_type") === "car_lockout" && (
-                      !step2Form.watch("car_make")?.trim() ||
-                      !step2Form.watch("car_model")?.trim() ||
-                      !step2Form.watch("car_year")
-                    ))
+                    (["home_lockout", "rekey", "smart_lock"].includes(step2Form.watch("service_type")) && !step2Form.watch("photo"))
                   }
                   className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
