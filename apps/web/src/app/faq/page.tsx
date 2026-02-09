@@ -105,6 +105,9 @@ export default function FAQPage() {
               <Link href="/contact" className="text-brand-300 hover:text-white transition-colors font-medium">
                 Contact
               </Link>
+              <Link href="/privacy" className="text-brand-300 hover:text-white transition-colors font-medium">
+                Privacy
+              </Link>
             </div>
           </div>
         </div>
