@@ -1,0 +1,22 @@
+# Staging app — use this when deploying to locksmith-staging (e.g. from staging branch)
+# In Fly UI: set this app's config path to fly.staging.toml if the option is available
+app = "locksmith-staging"
+primary_region = "iad"
+
+[env]
+  APP_ENV = "staging"
+  PORT = "8000"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"

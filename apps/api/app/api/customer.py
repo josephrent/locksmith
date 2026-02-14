@@ -426,7 +426,8 @@ async def create_payment_intent(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    if session.status != SessionStatus.SERVICE_SELECTED:
+    # Allow payment when customer has selected service (SERVICE_SELECTED) or is viewing quotes (PENDING_APPROVAL)
+    if session.status not in (SessionStatus.SERVICE_SELECTED, SessionStatus.PENDING_APPROVAL):
         raise HTTPException(
             status_code=400,
             detail="Service must be selected first",
