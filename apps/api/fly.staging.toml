@@ -1,5 +1,9 @@
+<<<<<<< Updated upstream
 # Staging app — use this when deploying to locksmith-staging (e.g. from staging branch)
 # In Fly UI: set this app's config path to fly.staging.toml if the option is available
+=======
+# Staging app — use with: fly deploy --config fly.staging.toml -a locksmith-staging --remote-only
+>>>>>>> Stashed changes
 app = "locksmith-staging"
 primary_region = "iad"
 
