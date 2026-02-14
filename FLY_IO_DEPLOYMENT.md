@@ -170,6 +170,27 @@ This will:
 
 **First deploy may take 5-10 minutes.**
 
+### Deploy on push to master (optional)
+
+To have Fly deploy automatically when you push to the `master` branch:
+
+1. **Create a Fly deploy token** (one-time, from your machine):
+   ```bash
+   cd apps/api
+   fly tokens create deploy -x 999999h
+   ```
+   Copy the token (it starts with `FlyV1...`).
+
+2. **Add the token as a GitHub secret:**
+   - Open your repo on GitHub → **Settings** → **Secrets and variables** → **Actions**
+   - Click **New repository secret**
+   - Name: `FLY_API_TOKEN`
+   - Value: paste the token from step 1
+
+3. **Workflow:** The repo includes `.github/workflows/fly-deploy.yml`, which runs `fly deploy` from `apps/api` on every push to `master`. If your default branch is `main`, edit the workflow and change `branches: [master]` to `branches: [main]`.
+
+4. **Push to master** — the **Actions** tab will show the run; when it succeeds, the app is deployed.
+
 ---
 
 ## Step 9: Verify Deployment

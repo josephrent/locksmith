@@ -1,0 +1,27 @@
+# Deploy Locksmith API to Fly.io when pushing to master
+# Requires: GitHub repo secret FLY_API_TOKEN (see FLY_IO_DEPLOYMENT.md)
+
+name: Deploy API to Fly.io
+
+on:
+  push:
+    branches:
+      - master   # change to 'main' if your default branch is main
+
+jobs:
+  deploy:
+    name: Deploy to Fly
+    runs-on: ubuntu-latest
+    concurrency: deploy-group  # prevent overlapping deploys
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Fly CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly
+        working-directory: apps/api
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
