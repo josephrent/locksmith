@@ -11,9 +11,15 @@ import {
   DollarSign,
   Phone,
   Clock,
+  CreditCard,
 } from "lucide-react";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { api } from "@/lib/api";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
 
 interface JobOffer {
   id: string;
@@ -33,6 +39,91 @@ interface OffersResponse {
   accepted_offers: number;
 }
 
+type PaymentStep = "idle" | "loading_intent" | "form" | "processing" | "success" | "error";
+
+function PaymentForm({
+  clientSecret,
+  amountDisplay,
+  sessionId,
+  onSuccess,
+  onCancel,
+}: {
+  clientSecret: string;
+  amountDisplay: string;
+  sessionId: string;
+  onSuccess: () => void;
+  onCancel: () => void;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [payError, setPayError] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    const cardElement = elements.getElement(CardElement);
+    if (!cardElement) return;
+    setPayError(null);
+    setIsProcessing(true);
+    try {
+      const { error } = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: { card: cardElement },
+      });
+      if (error) {
+        setPayError(error.message || "Payment failed");
+        setIsProcessing(false);
+        return;
+      }
+      await api.completeRequest(sessionId);
+      onSuccess();
+    } catch (err) {
+      setPayError(err instanceof Error ? err.message : "Failed to complete booking");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <p className="text-brand-300">
+        Deposit amount: <span className="font-semibold text-white">{amountDisplay}</span>
+      </p>
+      <div className="p-4 bg-brand-800/50 rounded-lg border border-brand-700">
+        <CardElement
+          options={{
+            style: {
+              base: { color: "#e5e5e5", fontFamily: "inherit" },
+              invalid: { color: "#f87171" },
+            },
+          }}
+        />
+      </div>
+      {payError && (
+        <p className="text-sm text-danger-500">{payError}</p>
+      )}
+      <div className="flex gap-3">
+        <button
+          type="submit"
+          className="btn-primary flex-1"
+          disabled={!stripe || isProcessing}
+        >
+          {isProcessing ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+              Processing...
+            </>
+          ) : (
+            "Pay deposit"
+          )}
+        </button>
+        <button type="button" className="btn-secondary" onClick={onCancel} disabled={isProcessing}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
 
 export default function OffersPage() {
   const [offers, setOffers] = useState<JobOffer[]>([]);
@@ -40,6 +131,11 @@ export default function OffersPage() {
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [acceptedCount, setAcceptedCount] = useState(0);
+  const [paymentStep, setPaymentStep] = useState<PaymentStep>("idle");
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [amountDisplay, setAmountDisplay] = useState<string>("");
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [completeMessage, setCompleteMessage] = useState<string | null>(null);
 
   useEffect(() => {
     // Get session ID from URL params only
@@ -83,6 +179,32 @@ export default function OffersPage() {
   const acceptedOffers = offers.filter((o) => o.status === "accepted");
   const pendingOffers = offers.filter((o) => o.status === "pending");
   const declinedOffers = offers.filter((o) => o.status === "declined");
+
+  const startPayment = async () => {
+    if (!sessionId) return;
+    setPaymentError(null);
+    setPaymentStep("loading_intent");
+    try {
+      const intent = await api.createPaymentIntent(sessionId);
+      setClientSecret(intent.client_secret);
+      setAmountDisplay(intent.amount_display);
+      setPaymentStep("form");
+    } catch (err) {
+      setPaymentError(err instanceof Error ? err.message : "Failed to start payment");
+      setPaymentStep("error");
+    }
+  };
+
+  const cancelPayment = () => {
+    setPaymentStep("idle");
+    setClientSecret(null);
+    setPaymentError(null);
+  };
+
+  const onPaymentSuccess = () => {
+    setPaymentStep("success");
+    setCompleteMessage("Your booking is confirmed. We'll send you a text shortly.");
+  };
 
   return (
     <div className="min-h-screen bg-brand-950">
@@ -144,6 +266,20 @@ export default function OffersPage() {
                 </div>
               </div>
 
+              {/* Booking success */}
+              {paymentStep === "success" && completeMessage && (
+                <div className="mb-8 p-6 bg-success-500/10 border border-success-500/30 rounded-lg">
+                  <div className="flex items-center gap-3 mb-2">
+                    <Check className="w-8 h-8 text-success-500" />
+                    <h2 className="text-xl font-semibold text-white">Booking confirmed</h2>
+                  </div>
+                  <p className="text-brand-300">{completeMessage}</p>
+                  <Link href="/" className="btn-primary mt-4 inline-block">
+                    Back to Home
+                  </Link>
+                </div>
+              )}
+
               {/* Accepted Offers (Quotes) */}
               {acceptedOffers.length > 0 && (
                 <div className="mb-8">
@@ -187,6 +323,61 @@ export default function OffersPage() {
                         </div>
                       ))}
                   </div>
+                </div>
+              )}
+
+              {/* Pay deposit - show when we have quotes and haven't completed yet */}
+              {acceptedOffers.length > 0 && paymentStep !== "success" && sessionId && (
+                <div className="mb-8 p-6 bg-brand-800/50 rounded-lg border border-brand-700">
+                  <h2 className="text-xl font-semibold text-white mb-2 flex items-center gap-2">
+                    <CreditCard className="w-5 h-5 text-copper-500" />
+                    Ready to book?
+                  </h2>
+                  <p className="text-brand-400 mb-4">
+                    Pay the deposit to confirm your request. A locksmith will be in touch.
+                  </p>
+                  {paymentStep === "idle" && (
+                    <>
+                      {!stripePublishableKey ? (
+                        <p className="text-sm text-brand-500">
+                          Payment is not configured. Contact support to complete your booking.
+                        </p>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={startPayment}
+                        >
+                          Pay deposit
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {paymentStep === "loading_intent" && (
+                    <div className="flex items-center gap-2 text-brand-400">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Preparing payment...</span>
+                    </div>
+                  )}
+                  {paymentStep === "form" && clientSecret && stripePromise && (
+                    <Elements stripe={stripePromise} options={{ clientSecret }}>
+                      <PaymentForm
+                        clientSecret={clientSecret}
+                        amountDisplay={amountDisplay}
+                        sessionId={sessionId}
+                        onSuccess={onPaymentSuccess}
+                        onCancel={cancelPayment}
+                      />
+                    </Elements>
+                  )}
+                  {paymentStep === "error" && paymentError && (
+                    <div className="space-y-2">
+                      <p className="text-danger-500">{paymentError}</p>
+                      <button type="button" className="btn-secondary" onClick={cancelPayment}>
+                        Try again
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 

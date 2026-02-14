@@ -170,26 +170,19 @@ This will:
 
 **First deploy may take 5-10 minutes.**
 
-### Deploy on push to main (optional)
+### Two-app setup: Production and Staging
 
-To have Fly deploy automatically when you push to the `main` branch:
+| App               | Config file        | Branch   | URL(s) |
+|-------------------|--------------------|----------|--------|
+| **locksmith**     | `fly.toml`         | **main** | api.laredo-locksmith.com, locksmith.fly.dev |
+| **locksmith-staging** | `fly.staging.toml` | **staging** | locksmith-staging.fly.dev |
 
-1. **Create a Fly deploy token** (one-time, from your machine):
-   ```bash
-   cd apps/api
-   fly tokens create deploy -x 999999h
-   ```
-   Copy the token (it starts with `FlyV1...`).
+- **fly.toml** — `app = "locksmith"`, used for production.
+- **fly.staging.toml** — `app = "locksmith-staging"`, same content except app name and `APP_ENV = "staging"`.
 
-2. **Add the token as a GitHub secret:**
-   - Open your repo on GitHub → **Settings** → **Secrets and variables** → **Actions**
-   - Click **New repository secret**
-   - Name: `FLY_API_TOKEN`
-   - Value: paste the token from step 1
+**Setup:** In the [Fly dashboard](https://fly.io/dashboard), for each app connect the GitHub repo and set the branch. For **locksmith-staging**, if the UI has a “Config file” or “Path to fly.toml” option, set it to **fly.staging.toml** so deploys use the correct app name. For **locksmith** (prod), use the default **fly.toml**.
 
-3. **Workflow:** The repo includes `.github/workflows/fly-deploy.yml`, which runs `fly deploy` from `apps/api` on every push to `main`.
-
-4. **Push to main** — the **Actions** tab will show the run; when it succeeds, the app is deployed.
+**Staging app:** Create with `fly apps create locksmith-staging`, set secrets with `--app locksmith-staging`, then connect the repo and branch **staging** in the UI.
 
 ---
 
