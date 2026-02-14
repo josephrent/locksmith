@@ -1,13 +1,14 @@
 """Webhook handlers for external services (Twilio, Stripe)."""
 
+import logging
 import re
 from datetime import datetime
 from fastapi import APIRouter, Request, HTTPException, Form
 from fastapi.responses import PlainTextResponse
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.api.deps import DbSession, SMSServiceDep, PaymentServiceDep, DispatchServiceDep
-from app.services.locksmith_service import LocksmithService
+from app.services.locksmith_service import LocksmithService, _normalize_phone_e164
 from app.schemas.message import TwilioWebhook
 from app.models.job_offer import JobOffer, OfferStatus
 from app.models.request_session import RequestSession, SessionStatus
@@ -15,6 +16,7 @@ from app.config import get_settings
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/twilio/sms")
@@ -38,13 +40,14 @@ async def twilio_sms_webhook(
     - UNAVAILABLE: Pause offers
     - STOP: Deactivate
     """
-    # Normalize phone number
+    # Normalize phone number for lookup (Twilio may send "+1 9563243269" or "+19563243269")
     from_phone = From.strip()
+    from_phone_normalized = _normalize_phone_e164(from_phone)
     body = Body.strip().upper()
 
     # Log inbound message
     locksmith_service = LocksmithService(db)
-    locksmith = await locksmith_service.get_by_phone(from_phone)
+    locksmith = await locksmith_service.get_by_phone(from_phone_normalized)
     locksmith_id = locksmith.id if locksmith else None
 
     await sms_service.log_inbound_message(
@@ -59,12 +62,23 @@ async def twilio_sms_webhook(
     response_message = ""
 
     if not locksmith:
+        logger.warning(
+            "Twilio SMS: no locksmith found for from_phone=%r (normalized=%r). "
+            "Ensure webhook URL is reachable and DB has this number.",
+            from_phone,
+            from_phone_normalized,
+        )
         # Check if this is a customer sending STOP
         if body == "STOP":
-            # Find customer by phone number
+            # Find customer by phone number (try raw and normalized)
             customer_session_result = await db.execute(
                 select(RequestSession)
-                .where(RequestSession.customer_phone == from_phone)
+                .where(
+                    or_(
+                        RequestSession.customer_phone == from_phone,
+                        RequestSession.customer_phone == from_phone_normalized,
+                    )
+                )
                 .order_by(RequestSession.created_at.desc())
                 .limit(1)
             )
@@ -98,7 +112,16 @@ async def twilio_sms_webhook(
                     .limit(1)
                 )
                 offer = offer_result.scalar_one_or_none()
-                
+
+                if not offer:
+                    logger.warning(
+                        "Twilio SMS: no PENDING offer for locksmith_id=%s (from_phone=%r). "
+                        "Reply was: %r",
+                        locksmith.id,
+                        from_phone,
+                        Body.strip(),
+                    )
+
                 if offer:
                     # Update offer with quote
                     offer.status = OfferStatus.ACCEPTED
@@ -115,8 +138,9 @@ async def twilio_sms_webhook(
                         session = session_result.scalar_one_or_none()
                         
                         if session and session.customer_phone:
-                            # Build URL with session ID
-                            offers_url = f"{settings.frontend_url}/request/offers?session={offer.request_session_id}"
+                            # Build URL to frontend offers page (not the API). Use frontend_url without trailing slash.
+                            base = (settings.frontend_url or "").rstrip("/")
+                            offers_url = f"{base}/request/offers?session={offer.request_session_id}"
                             
                             # Send SMS to customer
                             customer_message = (
@@ -131,11 +155,14 @@ async def twilio_sms_webhook(
                                     body=customer_message,
                                 )
                             except Exception as e:
-                                import logging
-                                logger = logging.getLogger(__name__)
-                                logger.error(f"Failed to send SMS to customer: {str(e)}")
+                                logger.error("Failed to send SMS to customer: %s", e)
                     
                     await db.commit()
+                    logger.info(
+                        "Twilio SMS: updated offer %s to ACCEPTED, quoted_price=%s",
+                        offer.id,
+                        price_cents,
+                    )
                     response_message = f"Quote received: ${price_dollars:.2f}. Customer will be notified."
                 else:
                     # Try legacy job-based offers

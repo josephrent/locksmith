@@ -103,6 +103,8 @@ fly secrets set FRONTEND_URL="https://your-frontend.vercel.app"
 fly secrets set APP_ENV="production"
 ```
 
+**Critical:** `FRONTEND_URL` must be the **customer-facing web app** URL (e.g. your Next.js app on Vercel), **not** the API URL. The SMS "View all quotes" link is built as `{FRONTEND_URL}/request/offers?session=...`. If you set `FRONTEND_URL` to the API (e.g. `https://locksmith.fly.dev`), customers will get a broken link that hits the API and shows JSON or an error instead of the offers page.
+
 **Or set them in Fly.io Dashboard:**
 1. Go to [fly.io dashboard](https://fly.io/dashboard)
 2. Select your app

@@ -1,7 +1,8 @@
 """Customer API routes - public, no authentication required."""
 
-from uuid import UUID
+import logging
 import uuid
+from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request, BackgroundTasks, UploadFile, File
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -554,47 +555,76 @@ async def get_session_status(
     return response
 
 
+def _safe_offer_for_json(offer: JobOffer) -> dict:
+    """Build a JSON-serializable dict for one offer, defensive against missing/bad data."""
+    # status can be Enum (from ORM) or plain str (from DB); never use .value on str
+    raw = getattr(offer, "status", None)
+    status_str = getattr(raw, "value", None) if raw is not None else None
+    if status_str is None:
+        status_str = str(raw) if raw is not None else "unknown"
+    quoted = offer.quoted_price
+    quoted_display = f"${quoted / 100:.2f}" if quoted is not None else None
+    try:
+        sent_at_str = offer.sent_at.isoformat() if offer.sent_at else None
+    except Exception:
+        sent_at_str = None
+    try:
+        responded_at_str = offer.responded_at.isoformat() if offer.responded_at else None
+    except Exception:
+        responded_at_str = None
+    locksmith_name = "Unknown"
+    locksmith_phone = None
+    if offer.locksmith:
+        locksmith_name = getattr(offer.locksmith, "display_name", "Unknown") or "Unknown"
+        locksmith_phone = getattr(offer.locksmith, "phone", None)
+    return {
+        "id": str(offer.id),
+        "locksmith_name": locksmith_name,
+        "locksmith_phone": locksmith_phone,
+        "status": status_str,
+        "quoted_price": quoted,
+        "quoted_price_display": quoted_display,
+        "sent_at": sent_at_str,
+        "responded_at": responded_at_str,
+    }
+
+
 @router.get("/{session_id}/offers")
 async def get_session_offers(
     session_id: UUID,
     db: DbSession,
 ):
     """Get all job offers for a request session."""
-    # Verify session exists
-    result = await db.execute(
-        select(RequestSession).where(RequestSession.id == session_id)
-    )
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    logger = logging.getLogger(__name__)
+    try:
+        # Verify session exists
+        result = await db.execute(
+            select(RequestSession).where(RequestSession.id == session_id)
+        )
+        session = result.scalar_one_or_none()
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
 
-    # Get all offers for this session with locksmith info
-    offers_result = await db.execute(
-        select(JobOffer)
-        .where(JobOffer.request_session_id == session_id)
-        .options(selectinload(JobOffer.locksmith))
-        .order_by(JobOffer.sent_at.desc())
-    )
-    offers = offers_result.scalars().all()
+        # Get all offers for this session with locksmith info
+        offers_result = await db.execute(
+            select(JobOffer)
+            .where(JobOffer.request_session_id == session_id)
+            .options(selectinload(JobOffer.locksmith))
+            .order_by(JobOffer.sent_at.desc())
+        )
+        offers = offers_result.scalars().all()
 
-    # Format response
-    offers_data = []
-    for offer in offers:
-        offer_data = {
-            "id": str(offer.id),
-            "locksmith_name": offer.locksmith.display_name if offer.locksmith else "Unknown",
-            "locksmith_phone": offer.locksmith.phone if offer.locksmith else None,
-            "status": offer.status.value,
-            "quoted_price": offer.quoted_price,
-            "quoted_price_display": f"${offer.quoted_price / 100:.2f}" if offer.quoted_price else None,
-            "sent_at": offer.sent_at.isoformat() if offer.sent_at else None,
-            "responded_at": offer.responded_at.isoformat() if offer.responded_at else None,
+        offers_data = [_safe_offer_for_json(offer) for offer in offers]
+        accepted_count = len([o for o in offers_data if o.get("status") == "accepted"])
+
+        return {
+            "session_id": str(session_id),
+            "offers": offers_data,
+            "total_offers": len(offers_data),
+            "accepted_offers": accepted_count,
         }
-        offers_data.append(offer_data)
-
-    return {
-        "session_id": str(session_id),
-        "offers": offers_data,
-        "total_offers": len(offers_data),
-        "accepted_offers": len([o for o in offers_data if o["status"] == "accepted"]),
-    }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("get_session_offers failed for session_id=%s: %s", session_id, e)
+        raise

@@ -1,11 +1,24 @@
 """Service for locksmith management operations."""
 
 from __future__ import annotations
+import re
 from uuid import UUID
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.locksmith import Locksmith
+
+
+def _normalize_phone_e164(phone: str) -> str:
+    """Normalize to E.164 (e.g. +19563243269). Handles US 10-digit and +1."""
+    digits = re.sub(r"\D", "", phone)
+    if len(digits) == 10 and digits.isdigit():
+        return "+1" + digits
+    if len(digits) == 11 and digits.startswith("1"):
+        return "+" + digits
+    if digits:
+        return "+" + digits
+    return phone
 from app.models.job import Job, JobStatus
 from app.models.job_offer import JobOffer, OfferStatus
 from app.schemas.locksmith import LocksmithCreate, LocksmithUpdate, LocksmithStats
@@ -45,11 +58,37 @@ class LocksmithService:
         return result.scalar_one_or_none()
 
     async def get_by_phone(self, phone: str) -> Locksmith | None:
-        """Get a locksmith by phone number."""
+        """Get a locksmith by phone number. Tries exact match then E.164 and digits-only."""
         result = await self.db.execute(
             select(Locksmith).where(Locksmith.phone == phone)
         )
-        return result.scalar_one_or_none()
+        found = result.scalar_one_or_none()
+        if found:
+            return found
+        normalized = _normalize_phone_e164(phone)
+        if normalized != phone:
+            result = await self.db.execute(
+                select(Locksmith).where(Locksmith.phone == normalized)
+            )
+            found = result.scalar_one_or_none()
+            if found:
+                return found
+        digits = re.sub(r"\D", "", phone)
+        if len(digits) == 10:
+            result = await self.db.execute(
+                select(Locksmith).where(Locksmith.phone == digits)
+            )
+            found = result.scalar_one_or_none()
+            if found:
+                return found
+        if len(digits) == 11 and digits.startswith("1"):
+            result = await self.db.execute(
+                select(Locksmith).where(Locksmith.phone == digits[1:])
+            )
+            found = result.scalar_one_or_none()
+            if found:
+                return found
+        return None
 
     async def list(
         self,
