@@ -1,4 +1,4 @@
-# Deploy Locksmith API to Fly.io when pushing to master
+# Deploy Locksmith API to Fly.io when pushing to main
 # Requires: GitHub repo secret FLY_API_TOKEN (see FLY_IO_DEPLOYMENT.md)
 
 name: Deploy API to Fly.io
@@ -6,7 +6,7 @@ name: Deploy API to Fly.io
 on:
   push:
     branches:
-      - master   # change to 'main' if your default branch is main
+      - main
 
 jobs:
   deploy:
