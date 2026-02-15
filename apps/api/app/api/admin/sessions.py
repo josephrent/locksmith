@@ -3,8 +3,8 @@
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select, func
-
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import DbSession
 from app.models.request_session import RequestSession, SessionStatus
@@ -28,7 +28,8 @@ async def list_sessions(
     - Ineligible locations
     - Drop-off between steps
     """
-    query = select(RequestSession)
+    # Eager-load job so we don't lazy-load in async (MissingGreenlet)
+    query = select(RequestSession).options(selectinload(RequestSession.job))
 
     if status:
         query = query.where(RequestSession.status == status)
@@ -70,7 +71,9 @@ async def get_session(
 ):
     """Get a specific request session."""
     result = await db.execute(
-        select(RequestSession).where(RequestSession.id == session_id)
+        select(RequestSession)
+        .where(RequestSession.id == session_id)
+        .options(selectinload(RequestSession.job))
     )
     session = result.scalar_one_or_none()
 
