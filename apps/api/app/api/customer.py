@@ -3,6 +3,7 @@
 import logging
 import uuid
 from uuid import UUID
+import stripe
 from fastapi import APIRouter, HTTPException, Request, BackgroundTasks, UploadFile, File
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -445,11 +446,18 @@ async def create_payment_intent(
         }
         session.stripe_payment_intent_id = payment_data["payment_intent_id"]
     else:
-        # Create Stripe payment intent
-        payment_data = await payment_service.create_payment_intent(
-            session_id=session_id,
-            amount=session.deposit_amount,
-        )
+        # Create Stripe payment intent (catch Stripe errors to avoid 500)
+        try:
+            payment_data = await payment_service.create_payment_intent(
+                session_id=session_id,
+                amount=session.deposit_amount,
+            )
+        except stripe.StripeError as e:
+            logging.exception("Stripe error creating payment intent: %s", e)
+            raise HTTPException(
+                status_code=502,
+                detail="Payment provider error. Please try again or contact support.",
+            ) from e
         session.stripe_payment_intent_id = payment_data["payment_intent_id"]
 
     session.status = SessionStatus.PAYMENT_PENDING

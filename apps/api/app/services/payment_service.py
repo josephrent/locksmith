@@ -36,11 +36,11 @@ class PaymentService:
         Returns:
             Dict with client_secret and payment_intent_id
         """
-        # Create PaymentIntent
+        # Create PaymentIntent (explicit card so it works without dashboard payment method config)
         intent = stripe.PaymentIntent.create(
             amount=amount,
             currency="usd",
-            automatic_payment_methods={"enabled": True},
+            payment_method_types=["card"],
             metadata={
                 "session_id": str(session_id),
             },
