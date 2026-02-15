@@ -5,6 +5,7 @@ primary_region = "iad"
 [env]
   APP_ENV = "staging"
   PORT = "8000"
+  FRONTEND_URL = "https://locksmith-git-staging-joseph-renterias-projects.vercel.app"
 
 [http_service]
   internal_port = 8000
