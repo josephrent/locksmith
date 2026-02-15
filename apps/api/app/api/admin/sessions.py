@@ -11,7 +11,6 @@ from app.schemas.request_session import RequestSessionResponse, RequestSessionLi
 
 router = APIRouter(prefix="/sessions", tags=["admin-sessions"])
 
-
 @router.get("", response_model=RequestSessionListResponse)
 async def list_sessions(
     db: DbSession,
