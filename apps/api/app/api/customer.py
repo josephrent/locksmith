@@ -427,8 +427,12 @@ async def create_payment_intent(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Allow payment when customer has selected service (SERVICE_SELECTED) or is viewing quotes (PENDING_APPROVAL)
-    if session.status not in (SessionStatus.SERVICE_SELECTED, SessionStatus.PENDING_APPROVAL):
+    # Allow when: service selected, pending approval, or already on payment step (resume after refresh)
+    if session.status not in (
+        SessionStatus.SERVICE_SELECTED,
+        SessionStatus.PENDING_APPROVAL,
+        SessionStatus.PAYMENT_PENDING,
+    ):
         raise HTTPException(
             status_code=400,
             detail="Service must be selected first",
@@ -437,6 +441,42 @@ async def create_payment_intent(
     if not session.deposit_amount:
         raise HTTPException(status_code=400, detail="Deposit amount not set")
 
+    # Resume: already have a payment intent (e.g. user refreshed offers page)
+    if session.stripe_payment_intent_id and session.status == SessionStatus.PAYMENT_PENDING:
+        if settings.app_env == "development" and not settings.stripe_secret_key:
+            payment_data = {
+                "client_secret": "dev_secret",
+                "payment_intent_id": session.stripe_payment_intent_id,
+                "amount": session.deposit_amount,
+            }
+        else:
+            try:
+                intent = stripe.PaymentIntent.retrieve(session.stripe_payment_intent_id)
+                if intent.status in ("succeeded", "canceled"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Payment already completed or canceled",
+                    )
+                payment_data = {
+                    "client_secret": intent.client_secret,
+                    "payment_intent_id": intent.id,
+                    "amount": intent.amount,
+                }
+            except stripe.StripeError as e:
+                logging.exception("Stripe error retrieving payment intent: %s", e)
+                raise HTTPException(
+                    status_code=502,
+                    detail="Payment provider error. Please try again or contact support.",
+                ) from e
+        return PaymentIntent(
+            session_id=session_id,
+            client_secret=payment_data["client_secret"],
+            payment_intent_id=payment_data["payment_intent_id"],
+            amount=payment_data["amount"],
+            amount_display=f"${payment_data['amount'] / 100:.2f}",
+        )
+
+    # Create new payment intent
     # In development mode without Stripe, create a dummy payment intent
     if settings.app_env == "development" and not settings.stripe_secret_key:
         payment_data = {
