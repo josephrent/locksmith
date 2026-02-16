@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Key,
   LayoutDashboard,
@@ -11,6 +11,7 @@ import {
   BarChart3,
   Settings,
   Clock,
+  LogOut,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -29,6 +30,17 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  if (pathname === "/admin/login") {
+    return <>{children}</>;
+  }
+
+  async function handleLogout() {
+    await fetch("/api/admin-auth/logout", { method: "POST" });
+    router.push("/admin/login");
+    router.refresh();
+  }
 
   return (
     <div className="min-h-screen bg-brand-950 flex">
@@ -75,7 +87,7 @@ export default function AdminLayout({
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-brand-800">
+        <div className="p-4 border-t border-brand-800 space-y-1">
           <Link
             href="/"
             className="flex items-center gap-3 px-4 py-3 text-brand-400 hover:text-white rounded-lg hover:bg-brand-800 transition-colors"
@@ -83,6 +95,14 @@ export default function AdminLayout({
             <Settings className="w-5 h-5" />
             View Site
           </Link>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-4 py-3 text-brand-400 hover:text-white rounded-lg hover:bg-brand-800 transition-colors"
+          >
+            <LogOut className="w-5 h-5" />
+            Sign out
+          </button>
         </div>
       </aside>
 
