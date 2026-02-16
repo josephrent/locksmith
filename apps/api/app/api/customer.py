@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from datetime import datetime
 from uuid import UUID
 import stripe
 from fastapi import APIRouter, HTTPException, Request, BackgroundTasks, UploadFile, File
@@ -12,7 +13,7 @@ import googlemaps
 from app.api.deps import DbSession, PaymentServiceDep, DispatchServiceDep, SMSServiceDep, S3ServiceDep
 from app.config import get_settings
 from app.models.request_session import RequestSession, SessionStatus
-from app.models.job import Job
+from app.models.job import Job, JobStatus
 from app.models.photo import Photo
 from app.models.job_offer import JobOffer, OfferStatus
 from app.models.locksmith import Locksmith
@@ -527,9 +528,11 @@ async def complete_request(
     
     Creates the job and starts dispatch.
     """
-    # Get session
+    # Get session with job_offers so we can find accepted quote after payment
     result = await db.execute(
-        select(RequestSession).where(RequestSession.id == session_id)
+        select(RequestSession)
+        .where(RequestSession.id == session_id)
+        .options(selectinload(RequestSession.job_offers))
     )
     session = result.scalar_one_or_none()
     if not session:
@@ -575,8 +578,53 @@ async def complete_request(
         logger = logging.getLogger(__name__)
         logger.warning(f"Failed to send confirmation SMS: {str(e)}")
 
-    # Start dispatch in background
-    background_tasks.add_task(dispatch_service.start_dispatch, job.id)
+    # If a locksmith already gave an accepted quote for this session, assign the job to them
+    # and notify "Job confirmed" instead of sending a new "accept or decline" offer.
+    accepted_offers = [
+        o for o in (session.job_offers or [])
+        if getattr(o.status, "value", o.status) == OfferStatus.ACCEPTED.value and (o.quoted_price or 0) > 0
+    ]
+    accepted_offers.sort(key=lambda o: o.quoted_price or 0)
+    accepted_offer = accepted_offers[0] if accepted_offers else None
+    if accepted_offer:
+        # Load locksmith (offer may have it via relationship)
+        locksmith_result = await db.execute(
+            select(Locksmith).where(Locksmith.id == accepted_offer.locksmith_id)
+        )
+        locksmith = locksmith_result.scalar_one_or_none()
+        if locksmith:
+            job.assigned_locksmith_id = locksmith.id
+            job.status = JobStatus.ASSIGNED
+            job.assigned_at = datetime.utcnow()
+            accepted_offer.job_id = job.id
+            await db.commit()
+            await db.refresh(job)
+            # Notify locksmith: job confirmed (no accept/decline — they already quoted)
+            service_names = {
+                "home_lockout": "Home lockout",
+                "car_lockout": "Car lockout",
+                "rekey": "Lock rekey",
+                "smart_lock": "Smart lock install",
+            }
+            service = service_names.get(job.service_type, job.service_type)
+            quoted_display = f"${accepted_offer.quoted_price / 100:.2f}" if accepted_offer.quoted_price else "your quote"
+            try:
+                await sms_service.send_sms(
+                    to_phone=locksmith.phone,
+                    body=(
+                        f"Job confirmed! Customer has paid. {service} at {job.address or job.city}. "
+                        f"Your quote: {quoted_display}. Contact customer: {job.customer_phone}"
+                    ),
+                    job_id=job.id,
+                    locksmith_id=locksmith.id,
+                )
+            except Exception as e:
+                logging.getLogger(__name__).warning("Failed to send job-confirmed SMS to locksmith: %s", e)
+        else:
+            background_tasks.add_task(dispatch_service.start_dispatch, job.id)
+    else:
+        # No accepted quote for this session; run normal dispatch (wave of offers)
+        background_tasks.add_task(dispatch_service.start_dispatch, job.id)
 
     return {
         "success": True,

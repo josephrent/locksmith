@@ -386,7 +386,7 @@ class DispatchService:
         
         return (
             f"New job! {service} at {job.city}. "
-            f"Reply YES to accept or NO to decline."
+            f"Reply with your quote: Y $[price] (e.g. Y $150) or N to decline."
         )
 
     async def _get_job(self, job_id: UUID) -> Job | None:
